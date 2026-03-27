@@ -6,6 +6,8 @@ An autonomous AI Executive Assistant with HD avatar and real-time voice, powered
 
 ## Demo
 
+![Aria — AI Executive Assistant](Aria-Screenshot.png)
+
 > "Hey Aria, what's on my calendar today?"
 
 Aria responds with natural speech and lip-synced HD avatar video in real-time. She can manage your calendar, search the web, send emails, and handle Teams meetings — all through voice.
@@ -76,7 +78,7 @@ Aria responds with natural speech and lip-synced HD avatar video in real-time. S
 
 ```bash
 # Clone and install
-git clone https://github.com/ghosking/Avatar-Foundry.git
+git clone https://github.com/ITSpecialist111/Aria-Avatar-Foundry-WorkIQ.git
 cd Avatar-Foundry
 npm install
 
