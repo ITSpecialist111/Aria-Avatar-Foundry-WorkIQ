@@ -1,0 +1,33 @@
+{
+  "name": "avatar-foundry-server",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src/",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.8.0",
+    "@azure/msal-node": "^5.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "express-ws": "^5.0.2",
+    "helmet": "^8.1.0",
+    "ws": "^8.18.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/express-ws": "^3.0.5",
+    "@types/node": "^22.13.0",
+    "@types/ws": "^8.5.14",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.19.0",
+    "typescript": "~5.7.0"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "avatar-foundry",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Autonomous Executive Assistant with HD Avatar - Microsoft Foundry Showcase",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w server && npm run build -w client",
+    "lint": "npm run lint -w client && npm run lint -w server",
+    "clean": "npm run clean -w client && npm run clean -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
