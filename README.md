@@ -4,6 +4,8 @@ An autonomous AI Executive Assistant with HD avatar and real-time voice, powered
 
 **Aria** is a full-body, photorealistic AI assistant that can see, hear, and speak — built on Azure's Voice Live API, GPT-5 Realtime, and the Meg Casual avatar via WebRTC.
 
+> **Not just retrieval — fully actionable.** Aria goes beyond read-only access to your Microsoft 365 data. Powered by Work IQ MCP servers, she can take real actions on your behalf: sending emails, creating meetings, and updating your calendar — capabilities that go beyond today's Microsoft Copilot experiences.
+
 ## Demo
 
 ![Aria — AI Executive Assistant](Aria-Screenshot.png)
@@ -11,6 +13,21 @@ An autonomous AI Executive Assistant with HD avatar and real-time voice, powered
 > "Hey Aria, what's on my calendar today?"
 
 Aria responds with natural speech and lip-synced HD avatar video in real-time. She can manage your calendar, search the web, send emails, and handle Teams meetings — all through voice.
+
+## Actionable via WorkIQ
+
+Aria is not limited to retrieving information — she is **fully actionable** via Work IQ MCP servers. Using delegated Entra ID (OBO) tokens, she can act on your behalf across Microsoft 365:
+
+| Capability | Example |
+|------------|---------|
+| 📧 **Send emails** | *"Aria, send a follow-up email to the team with a summary of today's meeting."* |
+| 📅 **Create meetings** | *"Schedule a 30-minute sync with John for Thursday at 2pm."* |
+| ✏️ **Update meetings** | *"Move my 3pm call tomorrow to 4pm and add Sarah to the invite."* |
+| 📬 **Read & search mail** | *"Do I have anything urgent from my manager this week?"* |
+| 👥 **Look up people** | *"Find the contact details for the engineering lead."* |
+| 🔍 **Web search** | *"What are the latest Azure AI pricing changes?"* |
+
+> **Beyond today's Copilot:** As of March 2026, Microsoft Copilot remains largely read-only for many M365 actions. Aria, powered by Work IQ, can create and send emails, create and reschedule meetings, and take write actions across M365 — all through natural voice conversation with a photorealistic HD avatar. This is a capability gap that sets this solution apart.
 
 ## Architecture
 
@@ -155,7 +172,7 @@ Avatar-Foundry/
 - **HD Avatar** — Photorealistic Meg Casual avatar with natural idle animations and lip sync
 - **Real-time Voice** — Sub-200ms latency bidirectional voice via Voice Live API
 - **Dragon HD Voice** — `en-US-Ava:DragonHDLatestNeural` with 100+ speaking styles
-- **Work IQ MCP Tools** — Calendar, Mail, Teams, People, and Web Search via delegated OBO tokens
+- **Fully Actionable via Work IQ** — Goes beyond retrieval: send emails, create/update/move meetings, and more via delegated M365 MCP tools — surpassing today's Copilot read-only capabilities
 - **Barge-in** — Interrupt the assistant mid-sentence; audio cuts instantly
 - **Noise Suppression** — Azure Deep Noise Suppression on mic input
 - **Echo Cancellation** — Server-side echo cancellation (works with WebRTC avatar audio)
