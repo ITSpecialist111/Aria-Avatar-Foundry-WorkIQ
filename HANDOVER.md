@@ -76,13 +76,13 @@ The backend acts as a WebSocket proxy. It:
 5. Forwards all messages bidirectionally
 
 ### Audio Pipeline (Current — WebSocket mode)
-- **Mic → Server**: Client captures mic via `ScriptProcessorNode` (4096 buffer, 24kHz), converts to PCM16, base64-encodes, sends as `input_audio_buffer.append`
+- **Mic → Server**: Client captures mic via `AudioWorkletNode` (`mic-processor.js`, 24kHz), converts to PCM16, base64-encodes, sends as `input_audio_buffer.append`
 - **Server → Speaker**: Voice Live sends `response.audio.delta` with base64 PCM16, client decodes and schedules via `AudioBufferSourceNode` through a `GainNode`
 - **Barge-in**: On `input_audio_buffer.speech_started`, disconnects the `GainNode` to instantly silence queued audio
 
 ### Audio Pipeline (Avatar mode — WORKING)
 When avatar is enabled, audio pipelines are split:
-- **Mic → Server**: Same as WebSocket mode — mic captured via `ScriptProcessorNode`, sent as `input_audio_buffer.append` over WebSocket (NOT through WebRTC)
+- **Mic → Server**: Same as WebSocket mode — mic captured via `AudioWorkletNode`, sent as `input_audio_buffer.append` over WebSocket (NOT through WebRTC)
 - **Avatar video + audio output**: Received via WebRTC `pc.ontrack` events
 - **Key insight**: WebRTC is output-only (avatar video + TTS audio); mic always goes through WebSocket
 - `startMicCapture()` is always called after `session.updated`, regardless of avatar mode
@@ -153,7 +153,7 @@ The avatar WebRTC connection was failing with WebSocket close code 1006 due to *
 
 ### VAD Sensitivity (FIXED)
 - Default VAD was too sensitive, triggering on background noise
-- Fix: Tuned `threshold: 0.7`, `prefix_padding_ms: 500`, `silence_duration_ms: 800`
+- Fix: Tuned `threshold: 0.8`, `prefix_padding_ms: 500`, `silence_duration_ms: 1200`
 - File: `server/src/services/voiceLive.ts`
 
 ### Mute Breaking Server VAD (FIXED)
@@ -167,9 +167,16 @@ The avatar WebRTC connection was failing with WebSocket close code 1006 due to *
 - Fix: Dual system prompts — one explicitly says "no tools available" (inline), another lists real capabilities (MCP mode)
 - Files: `server/src/services/foundryAgent.ts`, `server/src/services/voiceLive.ts`
 
-### GPT-5 VQ Token Artifacts ("Audio HBA")
+### GPT-5 VQ Token Artifacts ("Audio HBA") (MITIGATED)
 - `gpt-realtime-1.5` sends VQ audio tokens in transcript fields: `<|audio_text|><|vq_hbr_audio_...|>`
 - These tokens are sometimes spoken aloud by the avatar as "Audio HBA" or similar garbled speech
+- Also leaks plain-text "audio text" artifacts in longer sessions
+- Fix (3-layer defense):
+  1. System prompt explicitly tells GPT-5 to never output "audio text", "audio HBA", or modality tokens
+  2. Server-side proxy filter strips VQ tokens and audio artifacts from text/transcript deltas before forwarding to client
+  3. Client-side transcript filter removes remnants from display
+- Files: `server/src/index.ts`, `server/src/services/voiceLive.ts`, `server/src/services/foundryAgent.ts`, `client/src/hooks/useVoiceLive.ts`
+- Note: Audio output is rendered by TTS before we see the text delta, so system prompt is the primary defense for spoken artifacts
 - Client filters these from displayed transcripts with `!data.transcript.includes('<|')`
 - **Audio output still affected** — the model generates these tokens in the audio stream itself
 - This is a model-level issue — may be fixed in later GPT-5 realtime versions
@@ -183,9 +190,10 @@ The avatar WebRTC connection was failing with WebSocket close code 1006 due to *
 - **Testing needed**: Verify end-to-end flow (MSAL login → OBO exchange → MCP tool calls → GPT-5 response)
 - Foundry Agent mode (with `PROJECT_NAME`) still available but GPT-5 not supported as agent model
 
-### ScriptProcessorNode Deprecation
-- Browser shows deprecation warning for `ScriptProcessorNode`
-- Should migrate to `AudioWorkletNode` for production
+### ~~ScriptProcessorNode Deprecation~~ — RESOLVED
+- Migrated to `AudioWorkletNode` with `mic-processor.js` running on dedicated audio thread
+- Mute state communicated via `MessagePort` (worklet runs off-main-thread)
+- No more browser deprecation warnings
 - Current implementation works but is not ideal for performance
 
 ### MSAL Popup vs Redirect
@@ -337,27 +345,33 @@ The Voice Live MCP events are **bare notifications with minimal fields**. The ac
 
 ### Known Issues — MCP / Voice Live (for next session)
 
-**1. `turn_detected` cancels responses during tool calls**
-VAD detects noise or user speaking while GPT-5 is trying to respond after a tool call, which cancels the in-progress response. The user has to re-prompt to get the data. Current mitigations (threshold=0.8, silence_duration_ms=1200, interim_response with `tool` trigger) help but don't fully solve the problem. May need to increase VAD threshold further, temporarily disable VAD during tool execution, or find a different approach.
+**1. `turn_detected` cancels responses during tool calls (MITIGATED)**
+VAD detects noise or user speaking while GPT-5 is trying to respond after a tool call, which cancels the in-progress response. Current mitigations:
+- VAD threshold=0.8, silence_duration_ms=1200
+- Interim response with `tool` trigger bridges the wait
+- **Auto-retry**: When a response is cancelled by `turn_detected` after an MCP call, the client automatically sends `response.create` to retry (up to 3 attempts). The retry logic checks `response.done` output types to avoid clearing the pending flag too early (only clears on `message` type, not `mcp_call` type).
+- File: `client/src/hooks/useVoiceLive.ts`
 
-**2. Empty audio transcript after tool completion**
-After an MCP tool call completes, GPT-5 sometimes produces an empty audio transcript (`Audio transcript done: `) instead of presenting the results. The user must re-prompt to get the data. This appears related to response ordering between MCP completion and GPT-5 response generation — the model generates audio before the tool output is fully processed.
+**2. Audio cue for tool calls (IMPLEMENTED)**
+A short ascending two-tone chime (880Hz→1100Hz, 200ms) plays via Web Audio API when any MCP tool call starts (`response.output_item.added` with `item.type === 'mcp_call'`). Gives immediate audible feedback that Aria is processing.
+- File: `client/src/hooks/useVoiceLive.ts`
 
-**3. Interim response during tool calls inconsistent**
-The `tool` trigger for `interim_response` is enabled in the session config but doesn't always fire, leading to silence during MCP execution. When it does fire, it provides a brief "Let me check that" bridge, but coverage is unreliable.
+**3. GPT-5 doesn't auto-respond after MCP call output (FIXED)**
+After MCP call output is delivered via `response.output_item.done`, GPT-5 Realtime does NOT automatically generate a follow-up response to present the results. Fix: client sends `response.create` 300ms after MCP output is received, prompting GPT-5 to speak the findings.
+- File: `client/src/hooks/useVoiceLive.ts`
 
 ---
 
 ## 9. Next Steps
 
 1. ~~**Test MCP E2E**~~ — ✅ Verified: calendar queries, email search, email reply, calendar CRUD all working (2026-03-27)
-2. **Fix `turn_detected` response cancellation** — VAD cancels GPT-5 responses during/after tool calls, forcing re-prompts. Investigate disabling VAD temporarily during tool execution or alternative approaches.
-3. **Fix empty audio transcript after tool completion** — GPT-5 not presenting MCP results; generates empty audio instead. Debug response ordering between MCP completion events and audio generation.
-4. **Add audible processing notification** — Play a subtle audio cue during MCP tool execution so users know the system is working (not hung). Currently silent during tool calls.
-5. **Fix VQ Artifacts** — Investigate model-level fix or audio post-processing to stop "Audio HBA" being spoken
-6. **GPT-5 Agent** — Deploy GPT-5 as Foundry Agent model once supported (user explicitly wants GPT-5, not GPT-4o)
-7. **AudioWorklet Migration** — Replace `ScriptProcessorNode` with `AudioWorkletNode`
+2. ~~**Fix `turn_detected` response cancellation**~~ — ✅ Auto-retry implemented: client detects cancelled responses after MCP calls and auto-sends `response.create` (up to 3 retries) (2026-03-28)
+3. ~~**Add audible processing notification**~~ — ✅ Two-tone chime plays when MCP tool call starts (2026-03-28)
+4. ~~**Fix VQ Artifacts**~~ — ✅ Mitigated with 3-layer defense: system prompt, server-side filter, client-side filter (2026-03-28)
+5. ~~**AudioWorklet Migration**~~ — ✅ Replaced ScriptProcessorNode with AudioWorkletNode for mic capture (2026-03-28)
+6. **Custom Avatar Background** — ✅ Supported via `AVATAR_BACKGROUND_URL` env var, rendered server-side by Voice Live (2026-03-28)
+7. **GPT-5 Agent** — Deploy GPT-5 as Foundry Agent model once supported (user explicitly wants GPT-5, not GPT-4o)
 8. **Production Deploy** — Use Bicep templates in `infra/` to deploy to Azure (App Service + Static Web App)
-9. **Avatar Enhancements** — Scene parameters (zoom, position, rotation), background images, avatar presets
+9. **Avatar Gestures** — Gestures (wave, shrug, etc.) are batch-only per Microsoft docs; not supported in real-time/Voice Live mode yet
 10. **Auto-reconnect** — WebRTC disconnects after 5min idle / 30min total; implement reconnection logic
 11. **More MCP Servers** — Add Planner, Files/OneDrive, SharePoint Lists

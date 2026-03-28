@@ -94,6 +94,7 @@ export const DEFAULT_AVATAR_CONFIG: AvatarConfig = {
   character: 'meg',
   style: 'casual',
   backgroundColor: '#1e293b',
+  backgroundImageUrl: '/background.jpg',
   isTransparent: false,
 };
 

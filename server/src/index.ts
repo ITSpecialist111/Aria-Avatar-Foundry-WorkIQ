@@ -92,7 +92,6 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
   let oboToken: string | undefined;
   let mcpFailCount = 0;
   let mcpToolsSent = 0;
-  let mcpFallbackDone = false;
 
   // Try OBO exchange if client secret is configured
   if (env.MSAL_CLIENT_SECRET && env.WORKIQ_ENVIRONMENT_ID) {
@@ -111,20 +110,25 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
   }
 
   // Regex to strip GPT-5 VQ token artifacts (e.g. <|vq_hbr_audio_...|>)
-  // These leak into text/transcript deltas and get spoken as "Audio HBA"
-  const vqTokenRegex = /<\|[a-z0-9_]+\|>/gi;
+  // These leak into text/transcript deltas and get spoken as "Audio HBA" or "audio text"
+  // NOTE: No 'g' flag — avoids stateful lastIndex bug with .test()
+  const vqTokenRegex = /<\|[a-z0-9_]+\|>/i;
+  // Also catch plain-text audio artifacts that GPT-5 leaks in longer sessions
+  const audioArtifactRegex = /^(audio text|audio hba|audio)\s*$/i;
 
   // Forward: Voice Live -> Client
   voiceLiveWs.on('message', (data) => {
     if (clientWs.readyState === WebSocket.OPEN) {
       let message = data.toString();
 
-      // Filter VQ tokens from transcript/text delta events
+      // Filter VQ tokens and audio artifacts from transcript/text delta events
       try {
         const parsed = JSON.parse(message);
-        if (parsed.delta && typeof parsed.delta === 'string' && vqTokenRegex.test(parsed.delta)) {
-          parsed.delta = parsed.delta.replace(vqTokenRegex, '').trim();
-          if (!parsed.delta) return; // Skip empty deltas
+        if (parsed.delta && typeof parsed.delta === 'string') {
+          // Strip VQ tokens
+          parsed.delta = parsed.delta.replace(/<\|[a-z0-9_]+\|>/gi, '').trim();
+          // Drop if empty or just an audio artifact
+          if (!parsed.delta || audioArtifactRegex.test(parsed.delta)) return;
           message = JSON.stringify(parsed);
         }
       } catch { /* binary data — pass through */ }

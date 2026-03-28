@@ -37,9 +37,13 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const processorRef = useRef<AudioWorkletNode | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const isMutedRef = useRef(false);
+  // Track pending MCP tool responses to auto-retry on turn_detected cancellation
+  const mcpCallPendingRef = useRef(false);
+  const autoRetryCountRef = useRef(0);
+  const MAX_AUTO_RETRIES = 3;
 
   // Audio playback state
   const playbackContextRef = useRef<AudioContext | null>(null);
@@ -92,6 +96,32 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
       const newGain = playbackContextRef.current.createGain();
       newGain.connect(playbackContextRef.current.destination);
       gainNodeRef.current = newGain;
+    }
+  }, []);
+
+  /** Play a short notification tone when a tool call starts */
+  const playToolCallTone = useCallback(() => {
+    try {
+      const ctx = new AudioContext();
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, ctx.currentTime);       // A5
+      oscillator.frequency.setValueAtTime(1100, ctx.currentTime + 0.08); // ~C#6
+
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+
+      oscillator.start(ctx.currentTime);
+      oscillator.stop(ctx.currentTime + 0.2);
+
+      oscillator.onended = () => ctx.close();
+    } catch {
+      // Audio not available — ignore
     }
   }, []);
 
@@ -216,27 +246,17 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
       const audioContext = new AudioContext({ sampleRate: 24000 });
       audioContextRef.current = audioContext;
 
-      const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
+      // Load AudioWorklet processor (runs on dedicated audio thread)
+      await audioContext.audioWorklet.addModule('/mic-processor.js');
 
-      processor.onaudioprocess = (event) => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          let pcm16: Int16Array;
-          if (isMutedRef.current) {
-            // Send silence to keep the audio stream alive for server_vad
-            pcm16 = new Int16Array(event.inputBuffer.length);
-          } else {
-            const inputData = event.inputBuffer.getChannelData(0);
-            // Convert float32 to PCM16
-            pcm16 = new Int16Array(inputData.length);
-            for (let i = 0; i < inputData.length; i++) {
-              const s = Math.max(-1, Math.min(1, inputData[i]!));
-              pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-            }
-          }
-          // Send as base64 encoded audio
-          const base64 = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
+      const source = audioContext.createMediaStreamSource(stream);
+      const workletNode = new AudioWorkletNode(audioContext, 'mic-processor');
+      processorRef.current = workletNode;
+
+      // Receive PCM16 data from the worklet thread
+      workletNode.port.onmessage = (event) => {
+        if (wsRef.current?.readyState === WebSocket.OPEN && event.data.pcm16) {
+          const base64 = btoa(String.fromCharCode(...new Uint8Array(event.data.pcm16.buffer)));
           wsRef.current.send(JSON.stringify({
             type: 'input_audio_buffer.append',
             audio: base64,
@@ -244,8 +264,8 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
         }
       };
 
-      source.connect(processor);
-      processor.connect(audioContext.destination);
+      source.connect(workletNode);
+      // AudioWorklet doesn't need to connect to destination for capture-only
       setIsListening(true);
     } catch (error) {
       console.error('[Mic] Failed to start capture:', error);
@@ -266,6 +286,8 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
     setIsMuted(prev => {
       const newMuted = !prev;
       isMutedRef.current = newMuted;
+      // Tell the AudioWorklet to send silence when muted
+      processorRef.current?.port.postMessage({ type: 'mute', muted: newMuted });
       console.log(`[Mic] ${newMuted ? 'Muted' : 'Unmuted'}`);
       return newMuted;
     });
@@ -320,11 +342,14 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
           break;
 
         case 'response.audio_transcript.done': {
-          // Strip VQ token artifacts from transcript before display
+          // Strip VQ token artifacts and audio modality leaks from transcript
           const rawTranscript = data.transcript || '';
-          const cleanTranscript = rawTranscript.replace(/<\|[a-z0-9_]+\|>/gi, '').trim();
+          const cleanTranscript = rawTranscript
+            .replace(/<\|[a-z0-9_]+\|>/gi, '')
+            .replace(/\baudio\s*(text|hba)\b/gi, '')
+            .trim();
           console.log('[VL] Audio transcript done:', cleanTranscript?.substring(0, 80));
-          if (cleanTranscript && !cleanTranscript.startsWith('{')) {
+          if (cleanTranscript && !cleanTranscript.startsWith('{') && !/^\s*audio\s*$/i.test(cleanTranscript)) {
             addTranscript({ role: 'assistant', content: cleanTranscript });
           }
           break;
@@ -332,6 +357,11 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
 
         case 'response.audio.delta':
           setIsSpeaking(true);
+          // Response audio is flowing — tool result response delivered successfully
+          if (mcpCallPendingRef.current) {
+            mcpCallPendingRef.current = false;
+            autoRetryCountRef.current = 0;
+          }
           // Decode base64 PCM16 audio and play it
           if (data.delta) {
             try {
@@ -412,6 +442,7 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
           const addedItem = data.item;
           if (addedItem?.type === 'mcp_call') {
             console.log('[VL] MCP call started:', addedItem.name, '| server:', addedItem.server_label, '| id:', addedItem.id);
+            playToolCallTone();
             const mcpAction: Omit<AgentAction, 'id' | 'timestamp'> = {
               type: inferActionType(addedItem.name || ''),
               status: 'executing',
@@ -445,16 +476,52 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
                 ? { ...a, status: (doneItem.error ? 'failed' : 'completed') as 'failed' | 'completed' }
                 : a
             ));
+            // Flag that we're waiting for GPT-5 to present tool results
+            mcpCallPendingRef.current = true;
+            autoRetryCountRef.current = 0;
+            // GPT-5 Realtime doesn't auto-generate a follow-up response after MCP output —
+            // explicitly trigger response.create so Aria presents the findings
+            setTimeout(() => {
+              if (wsRef.current?.readyState === WebSocket.OPEN) {
+                console.log('[VL] Triggering response.create after MCP call output');
+                wsRef.current.send(JSON.stringify({ type: 'response.create' }));
+              }
+            }, 300);
           }
           break;
         }
 
-        case 'response.done':
-          console.log('[VL] Response done:', data.response?.status, 'output items:', data.response?.output?.length);
-          if (data.response?.status === 'failed' || data.response?.status_details) {
+        case 'response.done': {
+          const respStatus = data.response?.status;
+          const respOutputs = data.response?.output || [];
+          const hasMessage = respOutputs.some((o: { type: string }) => o.type === 'message');
+          const hasMcpCall = respOutputs.some((o: { type: string }) => o.type === 'mcp_call');
+          console.log('[VL] Response done:', respStatus, 'outputs:', respOutputs.map((o: { type: string }) => o.type).join(','));
+
+          if (respStatus === 'cancelled' &&
+              data.response?.status_details?.reason === 'turn_detected' &&
+              mcpCallPendingRef.current &&
+              autoRetryCountRef.current < MAX_AUTO_RETRIES) {
+            // VAD cancelled the response after a tool call — auto-retry
+            autoRetryCountRef.current++;
+            console.log(`[VL] turn_detected cancelled tool response — auto-retry ${autoRetryCountRef.current}/${MAX_AUTO_RETRIES}`);
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({ type: 'response.create' }));
+            }
+          } else if (respStatus === 'completed' && hasMessage) {
+            // Successful message response — clear retry state
+            mcpCallPendingRef.current = false;
+            autoRetryCountRef.current = 0;
+          } else if (respStatus === 'completed' && hasMcpCall) {
+            // MCP call response completed — keep mcpCallPendingRef, waiting for follow-up message
+            console.log('[VL] MCP call response completed — awaiting follow-up message');
+          } else if (respStatus === 'failed') {
             console.error('[VL] Response FAILED — full event:', JSON.stringify(data.response).substring(0, 2000));
+            mcpCallPendingRef.current = false;
+            autoRetryCountRef.current = 0;
           }
           break;
+        }
 
         case 'response.text.delta':
           // Text deltas (non-audio responses) — add to transcript
@@ -483,7 +550,7 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
     } catch {
       // Binary data or non-JSON — ignore
     }
-  }, [addTranscript, startMicCapture, playAudioChunk, stopPlayback, startAvatarViaVoiceLive]);
+  }, [addTranscript, startMicCapture, playAudioChunk, stopPlayback, startAvatarViaVoiceLive, playToolCallTone]);
 
   const toggleSession = useCallback(async () => {
     if (sessionState === 'connected' || sessionState === 'active') {

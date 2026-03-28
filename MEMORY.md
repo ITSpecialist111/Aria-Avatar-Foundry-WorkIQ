@@ -63,18 +63,22 @@ The actual rich data (tool name, server_label, output) comes through `response.o
 - **Echo cancellation**: Re-enabled `server_echo_cancellation` — works with WebRTC avatar audio
 - **MCP URL requires tenant ID**: Must be `/agents/tenants/{tenantId}/servers/{serverId}/` (with trailing slash). Without tenant ID returns 400.
 - **MCP session crash**: Removed fallback session.update that caused duplicate session.updated → double WebRTC/mic init
-- **VQ token artifacts**: Strip with regex `/<\|[a-z0-9_]+\|>/gi` instead of discarding whole message
+- **VQ token artifacts**: 3-layer defense — system prompt ("NEVER output audio text"), server-side filter (stateless regex + audioArtifactRegex), client-side transcript filter. Fixed stateful `g` flag bug with `.test()`.
 - **OBO scope simplified**: Use `ea9ffc3e-.../.default` directly (no per-server scope fallback chain)
 - **MCP event handling was wrong**: `mcp_call.completed` has NO `output` field. `mcp_call_arguments.done` has NO `name` field. Real data comes on `response.output_item.added/done` where `item.type === 'mcp_call'`. This was the 3-hour breakthrough fix.
 - **M365 Copilot for queries, deterministic tools for actions**: ListCalendarView JSON is too verbose (24K+ tokens, causes server_error). Route all lookup questions through `mcp_M365Copilot` (copilot_chat) which returns clean summaries. Reserve calendar/mail MCP tools for write operations (CreateEvent, ReplyToMessage).
 - **interim_response with tool trigger**: Enables brief "Let me check that" during MCP calls. Without it, users re-prompt during the wait, triggering `turn_detected` which cancels the pending response.
-- **turn_detected cancelling responses**: VAD detects user speaking while waiting for MCP results, cancels the response GPT-5 was about to deliver. Fix: higher threshold (0.8) + longer silence (1200ms) + interim response to bridge the gap.
+- **turn_detected cancelling responses**: Auto-retry logic — when `response.done` cancelled by `turn_detected` while `mcpCallPendingRef` is true, auto-send `response.create` (max 3 retries). Only clear flag on `message` type completion, not `mcp_call`.
 - **interim_response latency was too low**: Was 100ms causing hallucinated "connection issue" responses. Changed to tool trigger with 5000ms threshold.
+- **ScriptProcessorNode → AudioWorkletNode**: Migrated mic capture to AudioWorklet (`mic-processor.js`) running on dedicated audio thread. Mute via MessagePort. Eliminates deprecation warning.
+- **Audio cue on tool call**: Two-tone chime (880Hz→1100Hz, 200ms) plays when MCP call starts via `playToolCallTone()`.
+- **Avatar background image**: `AVATAR_BACKGROUND_URL` env var renders background INTO the video stream (Azure server-side). Removed CSS background to prevent double-frame effect. Video set to `object-cover`.
+- **MCP call no auto-response**: GPT-5 Realtime doesn't auto-generate a follow-up after MCP output. Fix: send `response.create` 300ms after `response.output_item.done` for `mcp_call` type.
 
 ## Known Issues (TODO)
-- `turn_detected` cancelling GPT-5 responses after tool calls — user has to re-prompt
-- Empty audio transcript after tool completion — GPT-5 not presenting tool results
-- No audible feedback during tool execution (silence while MCP call is in progress)
+- WebRTC timeout: auto-reconnect after 5min idle / 30min total
+- VQ token audio artifacts: mitigated but still model-level (GPT-5 occasionally leaks tokens before system prompt takes effect)
+- Avatar gestures: batch synthesis only, not available in real-time/Voice Live mode
 
 ## Voice Live Avatar WebRTC - Critical Implementation Details
 - SDP must be base64-encoded JSON: `btoa(JSON.stringify(pc.localDescription))`

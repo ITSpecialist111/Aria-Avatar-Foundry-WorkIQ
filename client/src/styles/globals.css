@@ -11,8 +11,8 @@
 
 @layer components {
   .avatar-container {
-    @apply relative w-full h-full overflow-hidden rounded-2xl;
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+    @apply relative w-full h-full overflow-hidden;
+    background: #000;
   }
 
   .avatar-video {
@@ -81,7 +81,6 @@
 /* WebRTC video element styling */
 video#avatar-video {
   transform: scaleX(1);
-  border-radius: 1rem;
 }
 
 /* Scrollbar styling */
