@@ -14,7 +14,7 @@ interface AvatarViewProps {
 }
 
 export function AvatarView({
-  avatarConfig,
+  avatarConfig: _avatarConfig,
   isListening,
   isSpeaking,
   isMuted,
