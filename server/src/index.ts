@@ -109,10 +109,6 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
     console.log('[WS] No MSAL_CLIENT_SECRET or WORKIQ_ENVIRONMENT_ID — skipping OBO/MCP');
   }
 
-  // Regex to strip GPT-5 VQ token artifacts (e.g. <|vq_hbr_audio_...|>)
-  // These leak into text/transcript deltas and get spoken as "Audio HBA" or "audio text"
-  // NOTE: No 'g' flag — avoids stateful lastIndex bug with .test()
-  const vqTokenRegex = /<\|[a-z0-9_]+\|>/i;
   // Also catch plain-text audio artifacts that GPT-5 leaks in longer sessions
   const audioArtifactRegex = /^(audio text|audio hba|audio)\s*$/i;
 
