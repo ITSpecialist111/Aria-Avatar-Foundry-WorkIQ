@@ -1,6 +1,14 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useMsal } from '@azure/msal-react';
-import type { SessionState, TranscriptEntry, AgentAction, AvatarConfig, VoiceConfig } from '../types';
+import type { SessionState, TranscriptEntry, AgentAction, AvatarConfig, VoiceConfig, DashboardCard, DashboardCardType } from '../types';
+
+export interface WorkflowStep {
+  toolName: string;
+  serverLabel: string;
+  status: 'running' | 'completed' | 'failed';
+  startTime: number;
+  endTime?: number;
+}
 
 interface UseVoiceLiveOptions {
   avatarConfig: AvatarConfig;
@@ -14,6 +22,8 @@ interface UseVoiceLiveReturn {
   isMuted: boolean;
   transcript: TranscriptEntry[];
   actions: AgentAction[];
+  dashboardCards: DashboardCard[];
+  workflowSteps: WorkflowStep[];
   toggleSession: () => void;
   toggleMute: () => void;
   sendTextMessage: (text: string) => void;
@@ -31,6 +41,8 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
   const [isMuted, setIsMuted] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [actions, setActions] = useState<AgentAction[]>([]);
+  const [dashboardCards, setDashboardCards] = useState<DashboardCard[]>([]);
+  const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -44,6 +56,8 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
   const mcpCallPendingRef = useRef(false);
   const autoRetryCountRef = useRef(0);
   const MAX_AUTO_RETRIES = 3;
+  // Track response boundaries for workflow step accumulation
+  const currentResponseIdRef = useRef<string | null>(null);
 
   // Audio playback state
   const playbackContextRef = useRef<AudioContext | null>(null);
@@ -293,6 +307,69 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
     });
   }, []);
 
+  /** Parse MCP tool output into dashboard cards */
+  const parseMcpOutputToCards = useCallback((toolName: string, serverLabel: string, output: string): DashboardCard[] => {
+    const nameLower = (toolName || '').toLowerCase();
+    const labelLower = (serverLabel || '').toLowerCase();
+
+    // Determine card type from tool name or server label
+    let cardType: DashboardCardType = 'info';
+    if (labelLower.includes('calendar') || nameLower.includes('calendar') || nameLower.includes('event')) {
+      cardType = 'calendar';
+    } else if (labelLower.includes('mail') || nameLower.includes('mail') || nameLower.includes('email') || nameLower.includes('message')) {
+      cardType = 'email';
+    } else if (nameLower.includes('task') || nameLower.includes('planner')) {
+      cardType = 'task';
+    } else if (labelLower.includes('copilot')) {
+      cardType = 'info';
+    }
+
+    // Determine if this is an action (write operation)
+    const isAction = /^(create|update|reply|send|delete)/i.test(toolName);
+
+    // Build title based on tool name
+    let title = toolName || 'Tool Result';
+    if (isAction) {
+      const actionTitles: Record<string, string> = {
+        createevent: 'Event Created',
+        updateevent: 'Event Updated',
+        sendmail: 'Email Sent',
+        replytomessage: 'Reply Sent',
+        searchmessages: 'Email Results',
+        createdocument: 'Document Created',
+        listcalendarview: 'Calendar Events',
+      };
+      title = actionTitles[nameLower] || `${toolName} Completed`;
+    } else {
+      const queryTitles: Record<string, string> = {
+        searchmessages: 'Email Results',
+        searchmessagesqueryparameters: 'Email Search',
+        listcalendarview: 'Calendar Events',
+        getmydetails: 'User Details',
+        getuserdateandtimezonesettings: 'Timezone Info',
+        copilot_chat: 'Copilot Response',
+      };
+      title = queryTitles[nameLower] || title;
+    }
+
+    // Content: truncate to 200 chars
+    const content = output.length > 200 ? output.substring(0, 200) + '...' : output;
+
+    const cards: DashboardCard[] = [];
+
+    // Primary card
+    cards.push({
+      id: crypto.randomUUID(),
+      type: isAction ? 'action' : cardType,
+      title,
+      content,
+      timestamp: Date.now(),
+      toolName,
+    });
+
+    return cards;
+  }, []);
+
   const handleVoiceLiveMessage = useCallback((event: MessageEvent) => {
     try {
       const data = JSON.parse(event.data as string);
@@ -339,6 +416,11 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
           if (data.transcript && !data.transcript.includes('<|')) {
             addTranscript({ role: 'user', content: data.transcript });
           }
+          break;
+
+        case 'response.created':
+          // Track response boundary for workflow step accumulation
+          currentResponseIdRef.current = data.response?.id || null;
           break;
 
         case 'response.audio_transcript.done': {
@@ -454,6 +536,13 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
               id: addedItem.id || crypto.randomUUID(),
               timestamp: new Date(),
             }]);
+            // Track workflow step
+            setWorkflowSteps(prev => [...prev, {
+              toolName: addedItem.name,
+              serverLabel: addedItem.server_label,
+              status: 'running',
+              startTime: Date.now(),
+            }]);
           } else if (addedItem?.type === 'mcp_list_tools') {
             console.log('[VL] MCP tool discovery started for server:', addedItem.server_label);
           }
@@ -476,6 +565,12 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
                 ? { ...a, status: (doneItem.error ? 'failed' : 'completed') as 'failed' | 'completed' }
                 : a
             ));
+            // Update workflow step status
+            setWorkflowSteps(prev => prev.map(step =>
+              step.toolName === doneItem.name && step.status === 'running'
+                ? { ...step, status: doneItem.error ? 'failed' : 'completed', endTime: Date.now() }
+                : step
+            ));
             // Flag that we're waiting for GPT-5 to present tool results
             mcpCallPendingRef.current = true;
             autoRetryCountRef.current = 0;
@@ -487,11 +582,33 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
                 wsRef.current.send(JSON.stringify({ type: 'response.create' }));
               }
             }, 300);
+            // Generate dashboard cards from MCP output
+            const newCards = parseMcpOutputToCards(doneItem.name, doneItem.server_label, doneItem.output || '');
+            if (newCards.length > 0) {
+              setDashboardCards(prev => [...newCards, ...prev].slice(0, 10));
+            }
           }
           break;
         }
 
         case 'response.done': {
+          // Generate a workflow summary card if multi-step (2+ tool calls)
+          if (workflowSteps.length >= 2) {
+            const workflowCard: DashboardCard = {
+              id: crypto.randomUUID(),
+              type: 'task',
+              title: 'Workflow Completed',
+              content: `${workflowSteps.filter(s => s.status === 'completed').length}/${workflowSteps.length} steps completed`,
+              items: workflowSteps.map((step, i) => ({
+                label: `Step ${i + 1}`,
+                value: `${step.toolName} — ${step.status === 'completed' ? 'Done' : step.status === 'failed' ? 'Failed' : 'Running'}`,
+              })),
+              timestamp: Date.now(),
+            };
+            setDashboardCards(prev => [workflowCard, ...prev].slice(0, 10));
+          }
+          setWorkflowSteps([]);
+
           const respStatus = data.response?.status;
           const respOutputs = data.response?.output || [];
           const hasMessage = respOutputs.some((o: { type: string }) => o.type === 'message');
@@ -550,7 +667,7 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
     } catch {
       // Binary data or non-JSON — ignore
     }
-  }, [addTranscript, startMicCapture, playAudioChunk, stopPlayback, startAvatarViaVoiceLive, playToolCallTone]);
+  }, [addTranscript, startMicCapture, playAudioChunk, stopPlayback, startAvatarViaVoiceLive, playToolCallTone, parseMcpOutputToCards, workflowSteps]);
 
   const toggleSession = useCallback(async () => {
     if (sessionState === 'connected' || sessionState === 'active') {
@@ -563,6 +680,8 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
       playbackContextRef.current?.close();
       playbackContextRef.current = null;
       setSessionState('disconnected');
+      setDashboardCards([]);
+      setWorkflowSteps([]);
       return;
     }
 
@@ -655,6 +774,8 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
     isMuted,
     transcript,
     actions,
+    dashboardCards,
+    workflowSteps,
     toggleSession,
     toggleMute,
     sendTextMessage,

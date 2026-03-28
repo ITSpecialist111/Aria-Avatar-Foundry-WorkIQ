@@ -1,10 +1,14 @@
 import { useRef, useEffect } from 'react';
 import { Mail, Calendar, Search, CheckSquare, MessageSquare, Globe, User, FileText, Check, X } from 'lucide-react';
-import type { TranscriptEntry, AgentAction } from '../types';
+import type { TranscriptEntry, AgentAction, DashboardCard } from '../types';
+import type { WorkflowStep } from '../hooks/useVoiceLive';
+import { DashboardPanel } from './DashboardPanel';
 
 interface ConversationPanelProps {
   transcript: TranscriptEntry[];
   actions: AgentAction[];
+  dashboardCards: DashboardCard[];
+  workflowSteps: WorkflowStep[];
   onConfirmAction: (actionId: string) => void;
   onRejectAction: (actionId: string) => void;
 }
@@ -68,6 +72,8 @@ function ActionCard({ action, onConfirm, onReject }: {
 export function ConversationPanel({
   transcript,
   actions,
+  dashboardCards,
+  workflowSteps,
   onConfirmAction,
   onRejectAction,
 }: ConversationPanelProps) {
@@ -87,6 +93,29 @@ export function ConversationPanel({
           Conversation
         </h3>
       </div>
+
+      {/* Dashboard activity cards */}
+      <DashboardPanel cards={dashboardCards} />
+
+      {/* Active workflow progress indicator */}
+      {workflowSteps.length > 0 && (
+        <div className="px-4 py-2 bg-orange-500/10 border-b border-orange-500/20">
+          <div className="flex items-center gap-2 text-xs text-orange-300">
+            <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse" />
+            <span>Workflow: {workflowSteps.filter(s => s.status === 'completed').length}/{workflowSteps.length} steps</span>
+          </div>
+          <div className="mt-1 space-y-0.5">
+            {workflowSteps.map((step, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs">
+                <span className={step.status === 'completed' ? 'text-green-400' : step.status === 'failed' ? 'text-red-400' : 'text-orange-300 animate-pulse'}>
+                  {step.status === 'completed' ? '\u2713' : step.status === 'failed' ? '\u2717' : '\u25CB'}
+                </span>
+                <span className="text-slate-400">{step.toolName}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Scrollable content */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">

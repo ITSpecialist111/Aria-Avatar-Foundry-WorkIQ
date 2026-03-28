@@ -1,6 +1,8 @@
 import { WebSocket } from 'ws';
 import { env } from '../config/env';
 import { ARIA_SYSTEM_PROMPT } from './foundryAgent';
+import { getMemorySummary } from './userMemory';
+import { getFollowUpSummary } from './followUpTracker';
 
 const WORKIQ_BASE_URL = 'https://agent365.svc.cloud.microsoft/agents/tenants';
 
@@ -13,6 +15,93 @@ const WORKIQ_MCP_SERVERS = [
   { label: 'copilot', serverId: 'mcp_M365Copilot' },
   { label: 'word', serverId: 'mcp_WordServer' },
   // { label: 'web-search', serverId: 'mcp_WebSearchServer' }, // Disabled — tool discovery works but calls fail. M365 Copilot has web grounding built-in.
+];
+
+/** Function tools for persistent user memory */
+const MEMORY_FUNCTION_TOOLS = [
+  {
+    type: 'function' as const,
+    name: 'remember_user_preference',
+    description: 'Save a user preference, fact, or reminder to persistent memory. Use when the user shares personal information, preferences, or asks you to remember something.',
+    parameters: {
+      type: 'object',
+      properties: {
+        category: { type: 'string', enum: ['preference', 'fact', 'reminder'], description: 'Type of memory' },
+        content: { type: 'string', description: 'What to remember' },
+      },
+      required: ['category', 'content'],
+    },
+  },
+  {
+    type: 'function' as const,
+    name: 'recall_user_memories',
+    description: 'Retrieve all stored user memories and preferences.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    type: 'function' as const,
+    name: 'forget_user_memory',
+    description: 'Delete a specific memory by its ID.',
+    parameters: {
+      type: 'object',
+      properties: {
+        memory_id: { type: 'string', description: 'ID of the memory to delete' },
+      },
+      required: ['memory_id'],
+    },
+  },
+];
+
+/** Function tools for follow-up tracking */
+const FOLLOW_UP_FUNCTION_TOOLS = [
+  {
+    type: 'function' as const,
+    name: 'create_follow_up',
+    description: 'Create a follow-up reminder for the user. Use when the user mentions something they need to do or follow up on.',
+    parameters: {
+      type: 'object',
+      properties: {
+        description: { type: 'string', description: 'What to follow up on' },
+        due_date: { type: 'string', description: 'Optional due date in YYYY-MM-DD format' },
+      },
+      required: ['description'],
+    },
+  },
+  {
+    type: 'function' as const,
+    name: 'list_follow_ups',
+    description: 'List all pending follow-up reminders.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    type: 'function' as const,
+    name: 'complete_follow_up',
+    description: 'Mark a follow-up as completed.',
+    parameters: {
+      type: 'object',
+      properties: {
+        follow_up_id: { type: 'string', description: 'ID of the follow-up to complete' },
+      },
+      required: ['follow_up_id'],
+    },
+  },
+];
+
+/** Function tool for Foundry Agent delegation */
+const DELEGATION_FUNCTION_TOOLS = [
+  {
+    type: 'function' as const,
+    name: 'delegate_to_research_agent',
+    description: 'Delegate a complex research, analysis, or comparison task to a background AI research agent. Use for tasks that require deep analysis, multi-faceted comparison, or comprehensive research beyond simple lookups.',
+    parameters: {
+      type: 'object',
+      properties: {
+        task: { type: 'string', description: 'The research task to delegate' },
+        context: { type: 'string', description: 'Optional additional context for the research' },
+      },
+      required: ['task'],
+    },
+  },
 ];
 
 export interface VoiceLiveSession {
@@ -74,7 +163,7 @@ export function buildSessionConfig(oboToken?: string) {
     interim_response: {
       triggers: ['tool'],
       latency_threshold_ms: 5000,
-      instructions: 'Say a brief phrase like "Let me check that for you" or "One moment while I look that up." Keep it to one short sentence. Never mention errors or connection issues.',
+      instructions: 'Say a brief, contextual phrase while you wait for tool results. For example: "Let me check your calendar" or "Looking that up for you." Keep it to one short sentence. Never mention errors or connection issues.',
     },
     avatar: {
       character: env.AVATAR_CHARACTER,
@@ -103,12 +192,28 @@ export function buildSessionConfig(oboToken?: string) {
 
     if (hasMcpTools) {
       session.instructions = ARIA_SYSTEM_PROMPT_WITH_TOOLS;
-      session.tools = buildMcpTools(oboToken, env.WORKIQ_ENVIRONMENT_ID!);
+      session.tools = [...buildMcpTools(oboToken, env.WORKIQ_ENVIRONMENT_ID!), ...MEMORY_FUNCTION_TOOLS, ...FOLLOW_UP_FUNCTION_TOOLS, ...DELEGATION_FUNCTION_TOOLS];
       session.tool_choice = 'auto';
-      console.log(`[VL] Using inline mode + ${WORKIQ_MCP_SERVERS.length} MCP tools`);
+      console.log(`[VL] Using inline mode + ${WORKIQ_MCP_SERVERS.length} MCP tools + ${MEMORY_FUNCTION_TOOLS.length} memory tools + ${FOLLOW_UP_FUNCTION_TOOLS.length} follow-up tools + ${DELEGATION_FUNCTION_TOOLS.length} delegation tools`);
     } else {
       session.instructions = ARIA_SYSTEM_PROMPT;
-      console.log('[VL] Using inline instructions mode (no tools — missing OBO token or WORKIQ_ENVIRONMENT_ID)');
+      session.tools = [...MEMORY_FUNCTION_TOOLS, ...FOLLOW_UP_FUNCTION_TOOLS, ...DELEGATION_FUNCTION_TOOLS];
+      session.tool_choice = 'auto';
+      console.log(`[VL] Using inline mode with ${MEMORY_FUNCTION_TOOLS.length} memory + ${FOLLOW_UP_FUNCTION_TOOLS.length} follow-up + ${DELEGATION_FUNCTION_TOOLS.length} delegation tools (no MCP — missing OBO token or WORKIQ_ENVIRONMENT_ID)`);
+    }
+
+    // Inject persistent memory summary into instructions
+    const memorySummary = getMemorySummary();
+    if (memorySummary) {
+      session.instructions += `\n\nUSER MEMORIES (from previous sessions):\n${memorySummary}`;
+      console.log(`[VL] Injected ${memorySummary.split('\n').length} memories into system prompt`);
+    }
+
+    // Inject pending follow-ups into instructions
+    const followUpSummary = getFollowUpSummary();
+    if (followUpSummary) {
+      session.instructions += `\n\nPENDING FOLLOW-UPS:\n${followUpSummary}`;
+      console.log(`[VL] Injected ${followUpSummary.split('\n').length} pending follow-ups into system prompt`);
     }
   }
 
@@ -161,7 +266,30 @@ Interaction style:
 - NEVER output raw JSON, tool arguments, or tool call parameters — always speak naturally in plain English
 - NEVER repeat or read aloud the arguments you passed to a tool. When you get tool results, just summarize the findings conversationally.
 - When presenting calendar events or emails, summarize naturally as you would in conversation
-- NEVER output the words "audio text", "audio HBA", or any audio modality tokens. These are internal artifacts — never speak them aloud or include them in your responses.`;
+- NEVER output the words "audio text", "audio HBA", or any audio modality tokens. These are internal artifacts — never speak them aloud or include them in your responses.
+
+MULTI-STEP TASKS:
+- When the user asks for something that requires multiple actions (e.g., "Schedule a meeting and email the attendees"), break it down into clear steps.
+- Execute each step in order. After completing each step, briefly confirm what you did before proceeding to the next.
+- If any step fails, stop and inform the user. Do not continue blindly.
+- For complex requests, first outline your plan briefly (e.g., "I'll create the event first, then send the email"), then execute.
+- Examples: "Schedule a meeting and email the team about it" → Step 1: Create the calendar event. Step 2: Send an email about the new meeting.
+
+MEMORY:
+- You have persistent memory across sessions. When the user tells you a preference, fact about themselves, or asks you to remember something, use the remember_user_preference tool to save it.
+- At the start of each session, you receive stored memories. Reference them naturally in conversation.
+- If the user asks you to forget something, use the forget_user_memory tool.
+
+FOLLOW-UPS:
+- You can track follow-up items for the user. When they mention something they need to do or follow up on, offer to track it using the create_follow_up tool.
+- At the start of each session, if there are pending follow-ups, mention them naturally in your greeting.
+- When the user completes a follow-up, use the complete_follow_up tool to mark it done.
+
+RESEARCH DELEGATION:
+- For complex research, analysis, or comparison tasks that go beyond simple calendar/email lookups, use the delegate_to_research_agent tool.
+- This delegates to a background AI agent that can provide comprehensive analysis.
+- Tell the user you're delegating the research, then present the findings when they come back.
+- Examples: "Research the pros and cons of agile vs waterfall", "Analyze the key trends in AI for 2026", "Compare different approaches to team productivity".`;
 
 /**
  * Build a session.update that removes tools and switches to no-tools prompt.
@@ -182,6 +310,11 @@ export function buildNoToolsSessionUpdate() {
  * Build the proactive greeting event to send on session start.
  */
 export function buildGreetingEvent() {
+  const followUpSummary = getFollowUpSummary();
+  const followUpContext = followUpSummary
+    ? ` Also briefly mention that they have pending follow-ups: ${followUpSummary}`
+    : '';
+
   return {
     type: 'conversation.item.create',
     item: {
@@ -190,7 +323,7 @@ export function buildGreetingEvent() {
       content: [
         {
           type: 'input_text',
-          text: 'Greet the user warmly. Introduce yourself as Aria, their AI executive assistant. Let them know you can help with their calendar, emails, meetings, tasks, and research. Keep it brief and friendly.',
+          text: `Greet the user warmly. Introduce yourself as Aria, their AI executive assistant. Let them know you can help with their calendar, emails, meetings, tasks, and research. Keep it brief and friendly.${followUpContext}`,
         },
       ],
     },
