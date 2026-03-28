@@ -127,7 +127,7 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
         if (parsed.delta && typeof parsed.delta === 'string') {
           // Strip VQ tokens
           parsed.delta = parsed.delta.replace(/<\|[a-z0-9_]+\|>/gi, '').trim();
-          // Drop if empty or just an audio artifact
+          // Drop if empty or audio artifact
           if (!parsed.delta || audioArtifactRegex.test(parsed.delta)) return;
           message = JSON.stringify(parsed);
         }
@@ -145,7 +145,8 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
                           t === 'response.output_item.added' && event.item?.type === 'function_call' ? ` fn=${event.item.name}` :
                           t === 'response.output_item.added' && event.item?.type === 'mcp_call' ? ` MCP: ${event.item.name} (server: ${event.item.server_label})` :
                           t === 'response.output_item.added' && event.item?.type === 'mcp_list_tools' ? ` MCP discovery: ${event.item.server_label}` :
-                          t === 'response.output_item.done' && event.item?.type === 'mcp_call' ? ` MCP result: ${event.item.name} output=${(typeof event.item.output === 'string' ? event.item.output : JSON.stringify(event.item.output))?.substring(0, 500)}${event.item.error ? ' ERROR=' + JSON.stringify(event.item.error) : ''}` :
+                          t === 'response.output_item.done' && event.item?.type === 'mcp_call' ? ` MCP result: ${event.item.name} status=${event.item.status} output=${(typeof event.item.output === 'string' ? event.item.output : JSON.stringify(event.item.output))?.substring(0, 500)}${event.item.error ? ' ERROR=' + JSON.stringify(event.item.error) : ''}` :
+                          t === 'response.output_item.done' && event.item?.type !== 'message' && event.item?.type !== 'mcp_list_tools' ? ` item_type=${event.item?.type} status=${event.item?.status} ${JSON.stringify(event.item || event).substring(0, 500)}` :
                           t === 'mcp_list_tools.completed' ? ` item=${event.item_id}` :
                           t === 'mcp_list_tools.failed' ? ` ${JSON.stringify(event)}` :
                           t === 'response.mcp_call_arguments.done' ? ` item=${event.item_id} args=${event.arguments?.substring(0, 300)}` :
@@ -153,6 +154,13 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
                           t === 'response.mcp_call.failed' ? ` item=${event.item_id} ${JSON.stringify(event)}` :
                           '';
           console.log(`[VL→Client] ${t}${summary}`);
+          // Debug: full payload for failed MCP calls and their output_item.done
+          if (t === 'response.output_item.done' && event.item?.type === 'mcp_call') {
+            console.log('[VL→Client] MCP output_item.done FULL:', JSON.stringify(event).substring(0, 2000));
+          }
+          if (t === 'response.mcp_call.failed') {
+            console.log('[VL→Client] MCP FAILED FULL:', JSON.stringify(event).substring(0, 2000));
+          }
         }
       } catch { /* binary */ }
 

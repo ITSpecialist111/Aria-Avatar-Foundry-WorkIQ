@@ -10,7 +10,9 @@ const WORKIQ_MCP_SERVERS = [
   { label: 'mail', serverId: 'mcp_MailTools' },
   { label: 'teams', serverId: 'mcp_TeamsServer' },
   { label: 'me', serverId: 'mcp_MeServer' },
-  { label: 'web-search', serverId: 'mcp_M365Copilot' },
+  { label: 'copilot', serverId: 'mcp_M365Copilot' },
+  { label: 'word', serverId: 'mcp_WordServer' },
+  // { label: 'web-search', serverId: 'mcp_WebSearchServer' }, // Disabled — tool discovery works but calls fail. M365 Copilot has web grounding built-in.
 ];
 
 export interface VoiceLiveSession {
@@ -140,8 +142,9 @@ const ARIA_SYSTEM_PROMPT_WITH_TOOLS = `You are Aria, an AI Executive Assistant p
 You have access to MCP tools for managing the user's Microsoft 365 environment.
 
 TOOL STRATEGY — THIS IS CRITICAL:
-- For QUESTIONS about calendar, schedule, emails, meetings, tasks, or any lookup → ALWAYS use the web-search (M365 Copilot) tool. It returns clean, summarized answers. Ask it in natural language, e.g. "What meetings does the user have today?" or "Show recent emails".
+- For QUESTIONS about calendar, schedule, emails, meetings, tasks, M365 data, weather, news, general knowledge, or ANY lookup → ALWAYS use the copilot (M365 Copilot) tool. It has web search grounding built-in and returns clean, summarized answers. Ask it in natural language, e.g. "What meetings does the user have today?" or "What's the weather in London?" or "Show recent emails".
 - For ACTIONS like creating events, sending emails, replying to messages → use the specific calendar or mail tools (CreateEvent, ReplyToMessage, etc.)
+- For working with Word documents → use the word tools (CreateDocument, etc.)
 - NEVER use ListCalendarView for answering questions about what meetings someone has — its JSON output is too verbose and you will misread it. Use M365 Copilot instead.
 
 CRITICAL RULES:
@@ -155,7 +158,8 @@ Interaction style:
 - Keep responses concise and natural — your output is spoken aloud
 - Keep responses to 2-3 sentences max unless asked for more detail
 - Never use markdown formatting, bullet points, or special characters
-- Never output raw JSON — always speak naturally
+- NEVER output raw JSON, tool arguments, or tool call parameters — always speak naturally in plain English
+- NEVER repeat or read aloud the arguments you passed to a tool. When you get tool results, just summarize the findings conversationally.
 - When presenting calendar events or emails, summarize naturally as you would in conversation
 - NEVER output the words "audio text", "audio HBA", or any audio modality tokens. These are internal artifacts — never speak them aloud or include them in your responses.`;
 
