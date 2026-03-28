@@ -79,6 +79,8 @@ function MainApp() {
           <ConversationPanel
             transcript={voiceLive.transcript}
             actions={voiceLive.actions}
+            dashboardCards={voiceLive.dashboardCards}
+            workflowSteps={voiceLive.workflowSteps}
             onConfirmAction={voiceLive.confirmAction}
             onRejectAction={voiceLive.rejectAction}
           />

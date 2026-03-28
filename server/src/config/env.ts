@@ -32,6 +32,10 @@ const envSchema = z.object({
   MSAL_TENANT_ID: z.string(),
   // Work IQ MCP
   WORKIQ_ENVIRONMENT_ID: z.string().optional(),
+  // User Memory
+  USER_MEMORY_PATH: z.string().default('./data/user-memory.json'),
+  // Follow-Up Tracking
+  FOLLOW_UP_PATH: z.string().default('./data/follow-ups.json'),
   // Optional
   ALLOWED_ORIGINS: z.string().default('http://localhost:3000'),
 });

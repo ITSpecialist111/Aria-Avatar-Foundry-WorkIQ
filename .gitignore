@@ -12,3 +12,5 @@ Thumbs.db
 coverage/
 .azure/
 logs/
+data/
+server/data/

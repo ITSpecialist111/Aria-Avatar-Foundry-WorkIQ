@@ -104,6 +104,19 @@ export const DEFAULT_VOICE_CONFIG: VoiceConfig = {
   temperature: 0.8,
 };
 
+/** Dashboard card types for side-panel activity feed */
+export type DashboardCardType = 'calendar' | 'email' | 'task' | 'info' | 'action';
+
+export interface DashboardCard {
+  id: string;
+  type: DashboardCardType;
+  title: string;
+  content: string;
+  items?: Array<{ label: string; value: string }>;
+  timestamp: number;
+  toolName?: string;
+}
+
 export const DEMO_SCENARIOS: DemoScenario[] = [
   {
     id: 'morning-briefing',

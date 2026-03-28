@@ -7,6 +7,10 @@ import { DefaultAzureCredential } from '@azure/identity';
 import { env } from './config/env';
 import { buildSessionConfig, buildGreetingEvent, buildResponseCreate } from './services/voiceLive';
 import { exchangeTokenOBO } from './services/authService';
+import { loadMemories, saveMemory, deleteMemory } from './services/userMemory';
+import { createFollowUp, completeFollowUp, getPendingFollowUps } from './services/followUpTracker';
+import { startMeetingCountdown, stopMeetingCountdown } from './services/meetingCountdown';
+import { delegateToAgent } from './services/foundryDelegate';
 import healthRouter from './routes/health';
 import avatarRouter from './routes/avatar';
 import sessionRouter from './routes/session';
@@ -93,6 +97,9 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
   let mcpFailCount = 0;
   let mcpToolsSent = 0;
 
+  // Track pending function call arguments (for memory tools)
+  const pendingFunctionCalls = new Map<string, { name: string; callId: string }>();
+
   // Try OBO exchange if client secret is configured
   if (env.MSAL_CLIENT_SECRET && env.WORKIQ_ENVIRONMENT_ID) {
     try {
@@ -113,7 +120,7 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
   const audioArtifactRegex = /^(audio text|audio hba|audio)\s*$/i;
 
   // Forward: Voice Live -> Client
-  voiceLiveWs.on('message', (data) => {
+  voiceLiveWs.on('message', async (data) => {
     if (clientWs.readyState === WebSocket.OPEN) {
       let message = data.toString();
 
@@ -218,6 +225,74 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
             console.error('[WS] MCP ERROR:', JSON.stringify(event.item.error));
           }
         }
+
+        // --- Function call handling (memory tools) ---
+        // Track function call start
+        if (event.type === 'response.output_item.added' && event.item?.type === 'function_call') {
+          pendingFunctionCalls.set(event.item.id, { name: event.item.name, callId: event.item.call_id });
+          console.log(`[WS] Function call started: ${event.item.name} (${event.item.call_id})`);
+        }
+
+        // Handle function call arguments done — execute the memory function
+        if (event.type === 'response.function_call_arguments.done') {
+          const fnCall = pendingFunctionCalls.get(event.item_id);
+          if (fnCall) {
+            pendingFunctionCalls.delete(event.item_id);
+            const args = JSON.parse(event.arguments || '{}');
+            let result: string;
+
+            try {
+              if (fnCall.name === 'remember_user_preference') {
+                const memory = saveMemory(args.category, args.content);
+                result = JSON.stringify({ success: true, memory_id: memory.id, message: `Saved: ${args.content}` });
+              } else if (fnCall.name === 'recall_user_memories') {
+                const memories = loadMemories();
+                result = JSON.stringify({ memories });
+              } else if (fnCall.name === 'forget_user_memory') {
+                const deleted = deleteMemory(args.memory_id);
+                result = JSON.stringify({ success: deleted, message: deleted ? 'Memory deleted' : 'Memory not found' });
+              } else if (fnCall.name === 'create_follow_up') {
+                const followUp = createFollowUp(args.description, args.due_date);
+                result = JSON.stringify({ success: true, follow_up_id: followUp.id, message: `Follow-up created: ${args.description}` });
+              } else if (fnCall.name === 'list_follow_ups') {
+                const followUps = getPendingFollowUps();
+                result = JSON.stringify({ follow_ups: followUps });
+              } else if (fnCall.name === 'complete_follow_up') {
+                const completed = completeFollowUp(args.follow_up_id);
+                result = JSON.stringify({ success: completed, message: completed ? 'Follow-up marked as completed' : 'Follow-up not found' });
+              } else if (fnCall.name === 'delegate_to_research_agent') {
+                console.log(`[WS] Delegating research task: ${args.task?.substring(0, 100)}`);
+                const response = await delegateToAgent(args.task, args.context);
+                if (response.error) {
+                  result = JSON.stringify({ error: response.error });
+                } else {
+                  result = JSON.stringify({ research_result: response.content });
+                }
+              } else {
+                result = JSON.stringify({ error: 'Unknown function' });
+              }
+            } catch (fnError) {
+              result = JSON.stringify({ error: (fnError as Error).message });
+            }
+
+            // Send function output back to Voice Live
+            voiceLiveWs.send(JSON.stringify({
+              type: 'conversation.item.create',
+              item: {
+                type: 'function_call_output',
+                call_id: fnCall.callId,
+                output: result,
+              },
+            }));
+
+            // Trigger response generation
+            setTimeout(() => {
+              voiceLiveWs.send(JSON.stringify({ type: 'response.create' }));
+            }, 300);
+
+            console.log(`[WS] Function ${fnCall.name} result: ${result.substring(0, 200)}`);
+          }
+        }
       } catch { /* ignore parse errors for binary data */ }
     }
   });
@@ -228,6 +303,9 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
     voiceLiveWs.send(JSON.stringify(buildGreetingEvent()));
     voiceLiveWs.send(JSON.stringify(buildResponseCreate()));
     console.log('[WS] Greeting sent');
+
+    // Start meeting countdown monitoring
+    startMeetingCountdown(voiceLiveWs);
   }
 
   // Fallback: if avatar handshake takes too long, send greeting anyway
@@ -260,6 +338,7 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
   // Handle disconnections
   clientWs.on('close', () => {
     console.log('[WS] Client disconnected');
+    stopMeetingCountdown(voiceLiveWs);
     if (voiceLiveWs.readyState === WebSocket.OPEN) {
       voiceLiveWs.close();
     }
@@ -268,6 +347,7 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
   voiceLiveWs.on('close', (code, reason) => {
     const reasonStr = reason.toString();
     console.log(`[WS] Voice Live disconnected: ${code} ${reasonStr}`);
+    stopMeetingCountdown(voiceLiveWs);
     if (clientWs.readyState === WebSocket.OPEN) {
       const safeCode = (code >= 1000 && code <= 1003) || (code >= 3000 && code <= 4999) ? code : 1000;
       clientWs.close(safeCode, reasonStr.substring(0, 123));
