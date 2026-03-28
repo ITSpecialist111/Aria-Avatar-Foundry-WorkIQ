@@ -25,6 +25,7 @@ const envSchema = z.object({
   // Avatar
   AVATAR_CHARACTER: z.string().default('meg'),
   AVATAR_STYLE: z.string().default('casual'),
+  AVATAR_BACKGROUND_URL: z.string().url().optional(),
   // MSAL
   MSAL_CLIENT_ID: z.string().default('9b00c7ab-2ec3-463f-9a30-0dbfbb3800af'),
   MSAL_CLIENT_SECRET: z.string().optional(),

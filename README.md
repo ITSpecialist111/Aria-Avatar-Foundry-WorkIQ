@@ -40,7 +40,7 @@ Aria is not limited to retrieving information — she is **fully actionable** vi
 │  └──────────┘  └──────────────┘  │  - TTS audio output       │  │
 │                                   └───────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────────────┐    │
-│  │  Mic Capture (ScriptProcessorNode → PCM16 → WebSocket)  │    │
+│  │  Mic Capture (AudioWorkletNode → PCM16 → WebSocket)     │    │
 │  └──────────────────────────────────────────────────────────┘    │
 └───────────────────────────┬──────────────────────────────────────┘
                             │ WebSocket
@@ -128,6 +128,7 @@ Copy `.env.example` to `.env` and fill in:
 | `VOICE_NAME` | No | TTS voice (default: `en-US-Ava:DragonHDLatestNeural`) |
 | `AVATAR_CHARACTER` | No | Avatar character (default: `meg`) |
 | `AVATAR_STYLE` | No | Avatar style (default: `casual`) |
+| `AVATAR_BACKGROUND_URL` | No | Public URL for avatar background image (rendered server-side into video stream) |
 | `PROJECT_NAME` | No | Foundry project name (enables agent mode with tools) |
 
 ## Scripts
@@ -174,9 +175,11 @@ Avatar-Foundry/
 - **Dragon HD Voice** — `en-US-Ava:DragonHDLatestNeural` with 100+ speaking styles
 - **Fully Actionable via Work IQ** — Goes beyond retrieval: send emails, create/update/move meetings, and more via delegated M365 MCP tools — surpassing today's Copilot read-only capabilities
 - **Barge-in** — Interrupt the assistant mid-sentence; audio cuts instantly
+- **Tool Call Audio Cue** — Two-tone chime when MCP tool execution begins
+- **Auto-Retry** — Automatic response recovery when VAD cancels tool call responses
 - **Noise Suppression** — Azure Deep Noise Suppression on mic input
 - **Echo Cancellation** — Server-side echo cancellation (works with WebRTC avatar audio)
-- **VAD Tuning** — Configurable threshold (0.7), silence duration, and prefix padding
+- **VAD Tuning** — Configurable threshold (0.8), silence duration (1200ms), and prefix padding (500ms)
 - **Mute** — Send silence when muted (keeps server_vad alive)
 - **MSAL Auth** — Enterprise SSO via Entra ID redirect flow + OBO for M365 delegation
 - **Proactive Greeting** — Aria introduces herself on session start
@@ -195,10 +198,10 @@ Connects to a Foundry Agent for reasoning and tool calling. Voice Live handles t
 
 ## Known Issues
 
-- **VQ Token Artifacts** — GPT-5 Realtime sometimes speaks garbled "Audio HBA" tokens aloud. Transcripts are filtered but audio output is affected. Model-level issue.
+- **VQ Token Artifacts** — GPT-5 Realtime occasionally leaks `<|vq_...|>` tokens or "audio text" into speech. Mitigated with 3-layer defense (system prompt + server filter + client filter) but still model-level.
 - **GPT-5 Agent Support** — GPT-5 not yet available as a Foundry Agent chat model (`DeploymentModelNotSupported`). Use inline + MCP tools mode instead.
-- **ScriptProcessorNode** — Browser deprecation warning. Should migrate to AudioWorkletNode for production.
 - **WebRTC Timeout** — Avatar WebRTC disconnects after 5min idle / 30min total. Auto-reconnect not yet implemented.
+- **Avatar Gestures** — 29 gestures available for Meg Casual but batch synthesis only. Not supported in real-time/Voice Live mode (natural idle animations only).
 
 ## Azure Resources
 

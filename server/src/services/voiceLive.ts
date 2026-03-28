@@ -81,7 +81,9 @@ export function buildSessionConfig(oboToken?: string) {
       video: {
         bitrate: 2000000,
         codec: 'h264',
-        background: { color: '#1e293b' },
+        background: env.AVATAR_BACKGROUND_URL
+          ? { image_url: env.AVATAR_BACKGROUND_URL }
+          : { color: '#1e293b' },
       },
     },
   };
@@ -154,7 +156,8 @@ Interaction style:
 - Keep responses to 2-3 sentences max unless asked for more detail
 - Never use markdown formatting, bullet points, or special characters
 - Never output raw JSON — always speak naturally
-- When presenting calendar events or emails, summarize naturally as you would in conversation`;
+- When presenting calendar events or emails, summarize naturally as you would in conversation
+- NEVER output the words "audio text", "audio HBA", or any audio modality tokens. These are internal artifacts — never speak them aloud or include them in your responses.`;
 
 /**
  * Build a session.update that removes tools and switches to no-tools prompt.

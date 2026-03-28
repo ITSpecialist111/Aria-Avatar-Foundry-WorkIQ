@@ -65,6 +65,7 @@ router.get('/config', (_req, res) => {
     character: env.AVATAR_CHARACTER,
     style: env.AVATAR_STYLE,
     voice: env.VOICE_NAME,
+    backgroundImageUrl: env.AVATAR_BACKGROUND_URL || undefined,
   });
 });
 

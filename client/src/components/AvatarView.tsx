@@ -28,7 +28,7 @@ export function AvatarView({
 
   return (
     <div className="avatar-container h-full flex flex-col items-center justify-center"
-         style={{ backgroundColor: avatarConfig.backgroundColor }}>
+         style={{ backgroundColor: '#000' }}>
       {/* Avatar video */}
       <div className="relative flex-1 w-full flex items-center justify-center min-h-0">
         {isActive ? (
@@ -39,7 +39,7 @@ export function AvatarView({
               autoPlay
               playsInline
               muted
-              className="avatar-video max-h-full"
+              className="avatar-video w-full h-full object-cover"
             />
             <audio ref={audioRef} autoPlay />
           </>
