@@ -8,7 +8,7 @@ An autonomous AI Executive Assistant with HD avatar and real-time voice, powered
 
 ## Demo
 
-![Aria — AI Executive Assistant](Aria-Screenshot.png)
+![Aria — AI Executive Assistant](Aria-Screenshot.png?v=2)
 
 > "Hey Aria, what's on my calendar today?"
 
