@@ -217,7 +217,6 @@ Avatar-Foundry/
 │   └── parameters.json
 ├── .env.example               # Environment template
 ├── CLAUDE.md                  # AI assistant instructions
-├── HANDOVER.md                # Detailed technical handover document
 └── ROADMAP.md                 # 20-feature roadmap across 5 phases
 ```
 
@@ -282,7 +281,6 @@ Connects to a Foundry Agent for reasoning and tool calling. Voice Live handles t
 
 ## Documentation
 
-- [HANDOVER.md](./HANDOVER.md) — Detailed technical handover with architecture decisions, fixes, and known issues
 - [ROADMAP.md](./ROADMAP.md) — 20-feature roadmap across 5 phases and 7 sprints
 - [Voice Live API Reference](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-api-reference-2026-01-01-preview)
 - [Voice Live Agents Quickstart](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart)

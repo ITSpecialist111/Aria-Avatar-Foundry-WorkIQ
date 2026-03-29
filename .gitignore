@@ -14,3 +14,7 @@ coverage/
 logs/
 data/
 server/data/
+
+# Sensitive internal docs (contain Azure resource IDs, architecture details)
+MEMORY.md
+HANDOVER.md

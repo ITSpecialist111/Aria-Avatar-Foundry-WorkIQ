@@ -35,6 +35,7 @@ jobs:
           VITE_MSAL_TENANT_ID: ${{ secrets.MSAL_TENANT_ID }}
 
       - name: Upload server artifact
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: server-dist
@@ -43,6 +44,7 @@ jobs:
             server/package.json
 
       - name: Upload client artifact
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: client-dist
@@ -51,7 +53,7 @@ jobs:
   deploy-infra:
     name: Deploy Infrastructure
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch'
     needs: build
     steps:
       - uses: actions/checkout@v4
@@ -71,7 +73,7 @@ jobs:
   deploy-backend:
     name: Deploy Backend
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch'
     needs: [build, deploy-infra]
     steps:
       - uses: actions/download-artifact@v4
@@ -91,7 +93,7 @@ jobs:
   deploy-frontend:
     name: Deploy Frontend
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch'
     needs: [build, deploy-infra]
     steps:
       - uses: actions/download-artifact@v4
