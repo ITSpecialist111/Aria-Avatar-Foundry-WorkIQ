@@ -163,7 +163,7 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
       const pc = new RTCPeerConnection({ iceServers: iceConfig });
       peerConnectionRef.current = pc;
 
-      // When remote tracks arrive, attach to video element (both video + audio)
+      // When remote tracks arrive, attach to video/audio elements
       pc.ontrack = (event) => {
         if (event.track.kind === 'video' && videoRef.current) {
           videoRef.current.srcObject = event.streams[0] ?? null;
@@ -172,23 +172,26 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
           videoRef.current.muted = false;
           console.log('[Avatar] Video track received, unmuted for audio');
         }
-        if (event.track.kind === 'audio' && videoRef.current) {
-          // Attach audio to the same video element's stream if not already there
-          // Some browsers send audio as a separate track
-          const existingStream = videoRef.current.srcObject as MediaStream | null;
-          if (existingStream && !existingStream.getAudioTracks().length) {
-            existingStream.addTrack(event.track);
-            console.log('[Avatar] Audio track added to video element stream');
-          } else if (!existingStream) {
-            videoRef.current.srcObject = event.streams[0] ?? null;
-            videoRef.current.muted = false;
-            console.log('[Avatar] Audio track received (no video yet)');
-          } else {
-            console.log('[Avatar] Audio track received (video stream already has audio)');
+        if (event.track.kind === 'audio') {
+          if (videoRef.current) {
+            // Attach audio to the same video element's stream if not already there
+            // Some browsers send audio as a separate track
+            const existingStream = videoRef.current.srcObject as MediaStream | null;
+            if (existingStream && !existingStream.getAudioTracks().length) {
+              existingStream.addTrack(event.track);
+              console.log('[Avatar] Audio track added to video element stream');
+            } else if (!existingStream) {
+              videoRef.current.srcObject = event.streams[0] ?? null;
+              videoRef.current.muted = false;
+              console.log('[Avatar] Audio track received (no video yet)');
+            } else {
+              console.log('[Avatar] Audio track received (video stream already has audio)');
+            }
           }
-          // Also set on dedicated audio element as fallback
+          // Set on dedicated audio element (primary path in accessible mode, fallback in standard mode)
           if (audioRef.current) {
             audioRef.current.srcObject = event.streams[0] ?? null;
+            console.log('[Avatar] Audio track attached to audio element');
           }
         }
       };
@@ -633,9 +636,26 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
             // MCP call response completed — keep mcpCallPendingRef, waiting for follow-up message
             console.log('[VL] MCP call response completed — awaiting follow-up message');
           } else if (respStatus === 'failed') {
+            const errorCode = data.response?.status_details?.error?.code;
+            const hasOnlyMessage = respOutputs.every((o: { type: string }) => o.type === 'message');
             console.error('[VL] Response FAILED — full event:', JSON.stringify(data.response).substring(0, 2000));
-            mcpCallPendingRef.current = false;
-            autoRetryCountRef.current = 0;
+
+            // Auto-retry VQ token glitches (failed message with no MCP calls) — safe to retry
+            if (errorCode === 'server_error' && hasOnlyMessage && autoRetryCountRef.current < MAX_AUTO_RETRIES) {
+              autoRetryCountRef.current++;
+              console.log(`[VL] VQ token / message glitch — auto-retry ${autoRetryCountRef.current}/${MAX_AUTO_RETRIES}`);
+              setTimeout(() => {
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                  wsRef.current.send(JSON.stringify({ type: 'response.create' }));
+                }
+              }, 500);
+            } else {
+              mcpCallPendingRef.current = false;
+              autoRetryCountRef.current = 0;
+              if (errorCode === 'server_error') {
+                addTranscript({ role: 'assistant', content: 'Sorry, that hit a server error. Could you try asking again?' });
+              }
+            }
           }
           break;
         }
