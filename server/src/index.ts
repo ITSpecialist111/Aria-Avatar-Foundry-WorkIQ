@@ -20,33 +20,6 @@ import tickerRouter from './routes/ticker';
 const { app } = expressWs(express());
 const credential = new DefaultAzureCredential();
 
-/**
- * Get a Speech Service authorization token via the Cognitive Services STS endpoint.
- * This exchanges an Entra ID token for a resource-scoped token that the regional
- * Voice Live endpoint accepts.
- */
-export async function getSpeechToken(): Promise<string> {
-  const aiEndpoint = env.AZURE_AI_SERVICES_ENDPOINT?.replace(/\/$/, '');
-  if (!aiEndpoint) {
-    throw new Error('AZURE_AI_SERVICES_ENDPOINT is required for Entra ID auth');
-  }
-
-  // Get an Entra ID token for Cognitive Services
-  const tokenResponse = await credential.getToken('https://cognitiveservices.azure.com/.default');
-  
-  // Exchange it for a Speech STS token via the custom domain
-  const stsResponse = await fetch(`${aiEndpoint}/sts/v1.0/issueToken`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${tokenResponse.token}` },
-  });
-
-  if (!stsResponse.ok) {
-    throw new Error(`STS token exchange failed: ${stsResponse.status} ${await stsResponse.text()}`);
-  }
-
-  return stsResponse.text();
-}
-
 // Middleware
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: env.ALLOWED_ORIGINS.split(','), credentials: true }));

@@ -27,18 +27,6 @@ export interface VoiceConfig {
   speed?: number;
 }
 
-/** Voice Live session configuration */
-export interface VoiceLiveSessionConfig {
-  voice: VoiceConfig;
-  inputAudioTranscription: { model: string };
-  turnDetection: {
-    type: string;
-    endOfUtteranceDetection: { model: string };
-  };
-  inputAudioNoiseReduction: { type: string };
-  inputAudioEchoCancellation: { type: string };
-}
-
 /** Transcript entry in the conversation */
 export interface TranscriptEntry {
   id: string;
@@ -57,29 +45,6 @@ export interface AgentAction {
   details?: Record<string, unknown>;
   timestamp: Date;
   requiresConfirmation: boolean;
-}
-
-/** WebRTC ICE server info from Azure Speech */
-export interface IceServerInfo {
-  urls: string[];
-  username: string;
-  credential: string;
-}
-
-/** API response for creating a session */
-export interface CreateSessionResponse {
-  sessionId: string;
-  websocketUrl: string;
-  iceServers: IceServerInfo;
-}
-
-/** Session status from the server */
-export interface SessionStatus {
-  state: SessionState;
-  agentName: string;
-  agentDescription?: string;
-  voiceName: string;
-  conversationId?: string;
 }
 
 /** Demo scenario preset */

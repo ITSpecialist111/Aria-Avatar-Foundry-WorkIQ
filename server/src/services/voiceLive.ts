@@ -1,4 +1,3 @@
-import { WebSocket } from 'ws';
 import { env } from '../config/env';
 import { ARIA_SYSTEM_PROMPT } from './foundryAgent';
 import { getMemorySummary } from './userMemory';
@@ -118,28 +117,6 @@ const WEATHER_FUNCTION_TOOLS = [
     },
   },
 ];
-
-export interface VoiceLiveSession {
-  ws: WebSocket;
-  sessionId?: string;
-  conversationId?: string;
-}
-
-/**
- * Create a Voice Live WebSocket connection configured for the Aria agent.
- */
-export function createVoiceLiveConnection(accessToken: string): WebSocket {
-  const endpoint = env.VOICELIVE_ENDPOINT.replace(/^https?:\/\//, '');
-  const wsUrl = `wss://${endpoint}/voice-live?api-version=${env.VOICELIVE_API_VERSION}`;
-
-  const ws = new WebSocket(wsUrl, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-    },
-  });
-
-  return ws;
-}
 
 /**
  * Build the session.update event payload for Voice Live.
@@ -314,21 +291,6 @@ WEATHER:
 MORNING BRIEFING:
 - When the user asks for a morning briefing, automatically run through: weather (get_weather), calendar (copilot), important emails (copilot), and pending follow-ups (list_follow_ups).
 - Present each section conversationally without being asked for each one.`;
-
-/**
- * Build a session.update that removes tools and switches to no-tools prompt.
- * Used as fallback when MCP tool discovery fails.
- */
-export function buildNoToolsSessionUpdate() {
-  return {
-    type: 'session.update',
-    session: {
-      instructions: ARIA_SYSTEM_PROMPT,
-      tools: [],
-      tool_choice: 'none',
-    },
-  };
-}
 
 /**
  * Build the proactive greeting event to send on session start.

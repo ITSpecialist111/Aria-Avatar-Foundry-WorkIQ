@@ -35,7 +35,7 @@ function loadPrefs(): Partial<AccessibilityState> {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     return stored ? JSON.parse(stored) : {};
-  } catch {
+  } catch (_e) {
     return {};
   }
 }
@@ -43,7 +43,7 @@ function loadPrefs(): Partial<AccessibilityState> {
 function savePrefs(state: AccessibilityState) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
+  } catch (_e) {
     // Silent fail
   }
 }
