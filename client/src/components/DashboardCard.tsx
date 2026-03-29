@@ -1,4 +1,4 @@
-import { Calendar, Mail, CheckSquare, Info, Zap } from 'lucide-react';
+import { Calendar, Mail, CheckSquare, Info, Zap, Cloud, ExternalLink } from 'lucide-react';
 import type { DashboardCard as DashboardCardType, DashboardCardType as CardType } from '../types';
 
 const CARD_CONFIG: Record<CardType, {
@@ -42,6 +42,20 @@ const CARD_CONFIG: Record<CardType, {
     border: 'border-slate-500/30',
     text: 'text-slate-300',
     accent: 'text-slate-400',
+  },
+  weather: {
+    icon: Cloud,
+    bg: 'bg-sky-500/10',
+    border: 'border-sky-500/30',
+    text: 'text-sky-300',
+    accent: 'text-sky-400',
+  },
+  link: {
+    icon: ExternalLink,
+    bg: 'bg-indigo-500/10',
+    border: 'border-indigo-500/30',
+    text: 'text-indigo-300',
+    accent: 'text-indigo-400',
   },
 };
 
@@ -88,6 +102,21 @@ export function DashboardCard({ card }: DashboardCardProps) {
               <span className="text-slate-300 truncate">{item.value}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Optional link */}
+      {card.linkUrl && (
+        <div className="mt-2 ml-6">
+          <a
+            href={card.linkUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`text-xs ${config.accent} hover:underline flex items-center gap-1`}
+          >
+            <ExternalLink className="w-3 h-3" />
+            {card.linkLabel || 'Open'}
+          </a>
         </div>
       )}
 

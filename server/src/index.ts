@@ -11,9 +11,11 @@ import { loadMemories, saveMemory, deleteMemory } from './services/userMemory';
 import { createFollowUp, completeFollowUp, getPendingFollowUps } from './services/followUpTracker';
 import { startMeetingCountdown, stopMeetingCountdown } from './services/meetingCountdown';
 import { delegateToAgent } from './services/foundryDelegate';
+import { getWeather } from './services/weather';
 import healthRouter from './routes/health';
 import avatarRouter from './routes/avatar';
 import sessionRouter from './routes/session';
+import tickerRouter from './routes/ticker';
 
 const { app } = expressWs(express());
 const credential = new DefaultAzureCredential();
@@ -54,6 +56,7 @@ app.use(express.json());
 app.use('/api', healthRouter);
 app.use('/api/avatar', avatarRouter);
 app.use('/api/session', sessionRouter);
+app.use('/api', tickerRouter);
 
 // WebSocket proxy: Client <-> Backend <-> Voice Live API
 app.ws('/ws/voice-live', async (clientWs, req) => {
@@ -268,6 +271,10 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
                 } else {
                   result = JSON.stringify({ research_result: response.content });
                 }
+              } else if (fnCall.name === 'get_weather') {
+                console.log(`[WS] Fetching weather for: ${args.city || 'London (default)'}`);
+                const weather = await getWeather(args.city);
+                result = JSON.stringify(weather);
               } else {
                 result = JSON.stringify({ error: 'Unknown function' });
               }
