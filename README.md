@@ -77,7 +77,7 @@ Aria is not limited to retrieving information — she is **fully actionable** vi
 | Frontend | React 19, TypeScript, Vite 6, Tailwind CSS 3 |
 | Backend | Express 5, TypeScript, WebSocket (ws) |
 | Auth | MSAL.js v5 (Entra ID redirect + OBO flow) |
-| Voice | Voice Live API, Dragon HD Ava Neural voice |
+| Voice | Voice Live API, Dragon HD Ava3 Neural voice |
 | Avatar | Meg Casual, WebRTC (H.264), base64-encoded SDP |
 | LLM | GPT-5 Realtime (`gpt-realtime-1.5`) |
 | Tools | Work IQ MCP servers (Calendar, Mail, Teams, People, Copilot, Word) |
@@ -126,7 +126,7 @@ Copy `.env.example` to `.env` and fill in:
 | `VITE_MSAL_TENANT_ID` | Yes | Same as `AZURE_TENANT_ID` (for Vite) |
 | `WORKIQ_ENVIRONMENT_ID` | No* | Power Platform environment ID (required for MCP tools) |
 | `VOICELIVE_MODEL` | No | Realtime model deployment name (default: `gpt-4o-realtime-preview`) |
-| `VOICE_NAME` | No | TTS voice (default: `en-US-Ava:DragonHDLatestNeural`) |
+| `VOICE_NAME` | No | TTS voice (default: `en-US-Ava3:DragonHDLatestNeural`) |
 | `AVATAR_CHARACTER` | No | Avatar character (default: `meg`) |
 | `AVATAR_STYLE` | No | Avatar style (default: `casual`) |
 | `AVATAR_BACKGROUND_URL` | No | Public URL for avatar background image (rendered server-side into video stream) |
@@ -198,7 +198,7 @@ Avatar-Foundry/
 
 - **HD Avatar** — Photorealistic Meg Casual avatar with natural idle animations and lip sync
 - **Real-time Voice** — Sub-200ms latency bidirectional voice via Voice Live API
-- **Dragon HD Voice** — `en-US-Ava:DragonHDLatestNeural` with 100+ speaking styles
+- **Dragon HD Voice** — `en-US-Ava3:DragonHDLatestNeural` with 100+ speaking styles
 - **Fully Actionable via Work IQ** — Send emails, create/update/move meetings, create Word docs, and more via delegated M365 MCP tools
 - **Dashboard Cards** — Live side-panel cards showing calendar events, emails, weather, actions, and quick-access widgets from MCP tool results
 - **Ticker Bar** — Top-of-screen ticker with weather, meeting counts, email summaries, and Kanban board link

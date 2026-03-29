@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Cloud, Mail, Calendar, ExternalLink } from 'lucide-react';
+import { Cloud, Mail, Calendar, ExternalLink, Clock, Activity } from 'lucide-react';
 import type { TickerData, TranscriptEntry } from '../types';
 
 interface TickerBarProps {
@@ -7,41 +7,94 @@ interface TickerBarProps {
   sessionActive: boolean;
 }
 
-/** Extract meeting count from transcript (rough heuristic from Aria's responses) */
+const WORD_TO_NUM: Record<string, string> = {
+  no: '0', zero: '0', one: '1', two: '2', three: '3', four: '4',
+  five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10',
+};
+
+function wordToDigit(word: string): string {
+  return WORD_TO_NUM[word.toLowerCase()] ?? word;
+}
+
+/** Extract calendar/meeting info from transcript using broad patterns */
 function extractMeetingSummary(transcript: TranscriptEntry[]): string | null {
   const assistantMessages = transcript
     .filter(t => t.role === 'assistant' && !t.isInterim)
     .map(t => t.content);
 
-  // Look for recent meeting mentions
-  for (let i = assistantMessages.length - 1; i >= Math.max(0, assistantMessages.length - 5); i--) {
+  for (let i = assistantMessages.length - 1; i >= Math.max(0, assistantMessages.length - 8); i--) {
     const msg = assistantMessages[i]?.toLowerCase() || '';
-    // Match patterns like "3 meetings", "two meetings", "no meetings"
-    const match = msg.match(/(\d+|no|one|two|three|four|five|six|seven|eight|nine|ten)\s+meeting/i);
-    if (match) {
-      return match[0].charAt(0).toUpperCase() + match[0].slice(1) + ' today';
+
+    // "5 meetings", "three meetings", "no meetings"
+    const meetingMatch = msg.match(/(\d+|no|zero|one|two|three|four|five|six|seven|eight|nine|ten)\s+(meeting|appointment|event|call|sync|standup)/i);
+    if (meetingMatch) {
+      const n = wordToDigit(meetingMatch[1]!);
+      return `${n} ${meetingMatch[2]}${n === '1' ? '' : 's'}`;
+    }
+
+    // "X things on your calendar", "X items on your calendar"
+    const calMatch = msg.match(/(\d+|no|zero|one|two|three|four|five|six|seven|eight|nine|ten)\s+(things?|items?|entries?|events?)\s+(on|in)\s+(your|the)\s+calendar/i);
+    if (calMatch) {
+      const n = wordToDigit(calMatch[1]!);
+      return `${n} calendar item${n === '1' ? '' : 's'}`;
+    }
+
+    // "your calendar for Monday/today/tomorrow" followed by a list — count items by common time patterns
+    if (msg.includes('calendar') || msg.includes('schedule')) {
+      const timeSlots = msg.match(/\d{1,2}(:\d{2})?\s*(am|pm|a\.m\.|p\.m\.)/gi);
+      if (timeSlots && timeSlots.length >= 2) {
+        const count = Math.ceil(timeSlots.length / 2); // each event usually has 1-2 time mentions
+        return `~${count} calendar items`;
+      }
     }
   }
   return null;
 }
 
+/** Extract email info from transcript using broad patterns */
 function extractEmailSummary(transcript: TranscriptEntry[]): string | null {
   const assistantMessages = transcript
     .filter(t => t.role === 'assistant' && !t.isInterim)
     .map(t => t.content);
 
-  for (let i = assistantMessages.length - 1; i >= Math.max(0, assistantMessages.length - 5); i--) {
+  for (let i = assistantMessages.length - 1; i >= Math.max(0, assistantMessages.length - 8); i--) {
     const msg = assistantMessages[i]?.toLowerCase() || '';
-    const match = msg.match(/(\d+|no|one|two|three|four|five|six|seven|eight|nine|ten)\s+(new |unread |recent )?(email|message)/i);
-    if (match) {
-      return match[0].charAt(0).toUpperCase() + match[0].slice(1);
+
+    // "5 emails", "three new emails", "no unread messages"
+    const emailMatch = msg.match(/(\d+|no|zero|one|two|three|four|five|six|seven|eight|nine|ten)\s+(new |unread |recent |important |urgent )?(email|message|mail)/i);
+    if (emailMatch) {
+      const n = wordToDigit(emailMatch[1]!);
+      const qualifier = emailMatch[2]?.trim() || '';
+      const noun = emailMatch[3] === 'mail' ? 'email' : emailMatch[3]!;
+      return `${n} ${qualifier ? qualifier + ' ' : ''}${noun}${n === '1' ? '' : 's'}`.replace(/\s+/g, ' ');
+    }
+
+    // "from [name]" patterns indicating email subjects discussed
+    if ((msg.includes('email') || msg.includes('inbox') || msg.includes('mail')) && msg.includes('from ')) {
+      const fromCount = (msg.match(/from /g) || []).length;
+      if (fromCount >= 1) {
+        return `${fromCount} email${fromCount === 1 ? '' : 's'} discussed`;
+      }
     }
   }
   return null;
 }
 
+/** Format current date/time */
+function useCurrentTime() {
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000); // update every minute
+    return () => clearInterval(timer);
+  }, []);
+
+  return now;
+}
+
 export function TickerBar({ transcript, sessionActive }: TickerBarProps) {
   const [ticker, setTicker] = useState<TickerData | null>(null);
+  const now = useCurrentTime();
 
   // Fetch ticker data on mount and every 15 minutes
   useEffect(() => {
@@ -65,42 +118,63 @@ export function TickerBar({ transcript, sessionActive }: TickerBarProps) {
   const meetingSummary = extractMeetingSummary(transcript);
   const emailSummary = extractEmailSummary(transcript);
 
-  // Don't show if no data at all
-  if (!ticker?.weather && !meetingSummary && !emailSummary && !sessionActive) return null;
+  const dateStr = now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
   return (
     <div className="flex items-center gap-4 px-4 py-1.5 bg-slate-900/80 border-b border-slate-800/50 text-xs overflow-hidden">
+      {/* Date & Time */}
+      <div className="flex items-center gap-1.5 text-slate-400 shrink-0">
+        <Clock className="w-3.5 h-3.5 text-slate-500" />
+        <span className="text-slate-300">{dateStr}</span>
+        <span className="text-slate-500">{timeStr}</span>
+      </div>
+
+      <div className="w-px h-3 bg-slate-700 shrink-0" />
+
       {/* Weather */}
       {ticker?.weather && (
-        <div className="flex items-center gap-1.5 text-slate-400 shrink-0">
-          <Cloud className="w-3.5 h-3.5 text-sky-400" />
-          <span className="text-slate-300">
-            {ticker.weather.icon} {ticker.weather.temperature}°C
-          </span>
-          <span className="text-slate-500">{ticker.weather.condition}</span>
-          <span className="text-slate-600">|</span>
-          <span className="text-slate-500">{ticker.weather.location}</span>
-        </div>
-      )}
-
-      {/* Separator */}
-      {ticker?.weather && (meetingSummary || emailSummary) && (
-        <div className="w-px h-3 bg-slate-700 shrink-0" />
+        <>
+          <div className="flex items-center gap-1.5 text-slate-400 shrink-0">
+            <Cloud className="w-3.5 h-3.5 text-sky-400" />
+            <span className="text-slate-300">
+              {ticker.weather.icon} {ticker.weather.temperature}°C
+            </span>
+            <span className="text-slate-500">{ticker.weather.condition}</span>
+            <span className="text-slate-600">|</span>
+            <span className="text-slate-500">{ticker.weather.location}</span>
+          </div>
+          <div className="w-px h-3 bg-slate-700 shrink-0" />
+        </>
       )}
 
       {/* Meetings from transcript */}
       {meetingSummary && (
-        <div className="flex items-center gap-1.5 text-slate-400 shrink-0">
-          <Calendar className="w-3.5 h-3.5 text-blue-400" />
-          <span className="text-slate-300">{meetingSummary}</span>
-        </div>
+        <>
+          <div className="flex items-center gap-1.5 text-slate-400 shrink-0">
+            <Calendar className="w-3.5 h-3.5 text-blue-400" />
+            <span className="text-slate-300">{meetingSummary}</span>
+          </div>
+          <div className="w-px h-3 bg-slate-700 shrink-0" />
+        </>
       )}
 
       {/* Emails from transcript */}
       {emailSummary && (
+        <>
+          <div className="flex items-center gap-1.5 text-slate-400 shrink-0">
+            <Mail className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="text-slate-300">{emailSummary}</span>
+          </div>
+          <div className="w-px h-3 bg-slate-700 shrink-0" />
+        </>
+      )}
+
+      {/* Session status */}
+      {sessionActive && (
         <div className="flex items-center gap-1.5 text-slate-400 shrink-0">
-          <Mail className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="text-slate-300">{emailSummary}</span>
+          <Activity className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="text-emerald-400">Live</span>
         </div>
       )}
 

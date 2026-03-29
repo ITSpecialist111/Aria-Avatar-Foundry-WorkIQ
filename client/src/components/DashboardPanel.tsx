@@ -21,8 +21,8 @@ interface DashboardPanelProps {
 }
 
 export function DashboardPanel({ cards }: DashboardPanelProps) {
-  const [isExpanded, setIsExpanded] = useState(true);
-  const [showWidgets, setShowWidgets] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [showWidgets, setShowWidgets] = useState(false);
 
   // Combine pinned widgets + dynamic cards, sorted newest first
   const allCards = [...PINNED_WIDGETS, ...cards];

@@ -1,16 +1,15 @@
 import { useRef, useEffect } from 'react';
 import { Mic, MicOff, PhoneOff, Volume2, Eye, Type, Contrast, Bell, BellOff } from 'lucide-react';
-import type { TranscriptEntry, AgentAction, DashboardCard } from '../types';
+import type { TranscriptEntry, AgentAction } from '../types';
 import type { WorkflowStep } from '../hooks/useVoiceLive';
 import type { FontSize } from '../hooks/useAccessibility';
 import type { SessionState } from '../types';
-import { DashboardPanel } from './DashboardPanel';
 
 interface AccessibleViewProps {
   transcript: TranscriptEntry[];
   actions: AgentAction[];
-  dashboardCards: DashboardCard[];
   workflowSteps: WorkflowStep[];
+  audioRef: React.RefObject<HTMLAudioElement | null>;
   sessionState: SessionState;
   isMuted: boolean;
   isSpeaking: boolean;
@@ -45,8 +44,8 @@ const STATUS_LABELS: Record<SessionState, string> = {
 export function AccessibleView({
   transcript,
   actions,
-  dashboardCards,
   workflowSteps,
+  audioRef,
   sessionState,
   isMuted,
   isSpeaking,
@@ -174,16 +173,9 @@ export function AccessibleView({
         </div>
       </header>
 
-      {/* Main content area — full width chat */}
+      {/* Main content area — full width chat, no dashboard sidebar */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Dashboard sidebar (narrower in accessible mode) */}
-        {dashboardCards.length > 0 && (
-          <aside className="w-[320px] shrink-0 border-r border-slate-800 overflow-y-auto" aria-label="Activity dashboard">
-            <DashboardPanel cards={dashboardCards} />
-          </aside>
-        )}
-
-        {/* Conversation — primary content, fills remaining space */}
+        {/* Conversation — primary content, fills full width */}
         <main className="flex-1 flex flex-col min-h-0" role="main" aria-label="Conversation with Aria">
           {/* Workflow progress */}
           {workflowSteps.length > 0 && (
@@ -339,6 +331,9 @@ export function AccessibleView({
           </div>
         </main>
       </div>
+
+      {/* Hidden audio element for WebRTC voice output — no video needed in accessible mode */}
+      <audio ref={audioRef} autoPlay className="hidden" />
     </div>
   );
 }

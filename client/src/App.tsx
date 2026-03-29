@@ -60,8 +60,8 @@ function MainApp() {
       <AccessibleView
         transcript={voiceLive.transcript}
         actions={voiceLive.actions}
-        dashboardCards={voiceLive.dashboardCards}
         workflowSteps={voiceLive.workflowSteps}
+        audioRef={voiceLive.audioRef}
         sessionState={voiceLive.sessionState}
         isMuted={voiceLive.isMuted}
         isSpeaking={voiceLive.isSpeaking}

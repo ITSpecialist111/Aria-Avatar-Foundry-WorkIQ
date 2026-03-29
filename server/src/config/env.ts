@@ -21,7 +21,7 @@ const envSchema = z.object({
   // Agent
   AGENT_NAME: z.string().default('Aria'),
   PROJECT_NAME: z.string().optional(),
-  VOICE_NAME: z.string().default('en-US-Ava:DragonHDLatestNeural'),
+  VOICE_NAME: z.string().default('en-US-Ava3:DragonHDLatestNeural'),
   // Avatar
   AVATAR_CHARACTER: z.string().default('meg'),
   AVATAR_STYLE: z.string().default('casual'),
