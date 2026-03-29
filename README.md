@@ -8,6 +8,8 @@ An autonomous AI Executive Assistant with HD avatar and real-time voice, powered
 
 ## Demo
 
+[![Watch the walkthrough on YouTube](https://img.shields.io/badge/YouTube-Walkthrough-red?logo=youtube)](https://youtu.be/g4TuHmuNZa4?si=hAstav4sRZEalIPV)
+
 ![Aria — AI Executive Assistant](Aria-Screenshot.png?v=2)
 
 > "Hey Aria, what's on my calendar today?"
