@@ -134,7 +134,7 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
       oscillator.stop(ctx.currentTime + 0.2);
 
       oscillator.onended = () => ctx.close();
-    } catch {
+    } catch (_e) {
       // Audio not available — ignore
     }
   }, []);
@@ -664,7 +664,7 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
           }
           break;
       }
-    } catch {
+    } catch (_e) {
       // Binary data or non-JSON — ignore
     }
   }, [addTranscript, startMicCapture, playAudioChunk, stopPlayback, startAvatarViaVoiceLive, playToolCallTone, parseMcpOutputToCards, workflowSteps]);

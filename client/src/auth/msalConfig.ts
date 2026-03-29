@@ -32,7 +32,3 @@ export const loginScopes = {
   scopes: ['openid', 'profile', 'offline_access', `api://${clientId}/access_as_user`],
 };
 
-// Scopes the backend needs for OBO — request silently after login
-export const apiScopes = {
-  scopes: [`api://${clientId}/access_as_user`],
-};

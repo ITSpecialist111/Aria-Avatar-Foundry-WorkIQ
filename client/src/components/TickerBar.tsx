@@ -52,7 +52,7 @@ export function TickerBar({ transcript, sessionActive }: TickerBarProps) {
           const data = await res.json();
           setTicker(data);
         }
-      } catch {
+      } catch (_e) {
         // Silent fail — ticker is non-critical
       }
     };

@@ -53,7 +53,7 @@ Aria is not limited to retrieving information — she is **fully actionable** vi
 │  │  - session.update → Voice Live API (with MCP tools)      │    │
 │  │  - Bidirectional message forwarding                      │    │
 │  └──────────────────────────────────────────────────────────┘    │
-│  REST: /api/health, /api/avatar/config, /api/avatar/ice         │
+│  REST: /api/health, /api/avatar/config, /api/avatar/ice, /api/ticker, /api/weather │
 └───────────────────────────┬──────────────────────────────────────┘
                             │ WSS (Bearer token)
 ┌───────────────────────────▼──────────────────────────────────────┐
@@ -65,7 +65,7 @@ Aria is not limited to retrieving information — she is **fully actionable** vi
 │  └────────────┘  └──────────────┘  └─────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────────────┐    │
 │  │  Work IQ MCP Tools (via OBO delegation)                  │    │
-│  │  Calendar · Mail · Teams · People · Web Search           │    │
+│  │  Calendar · Mail · Teams · People · Copilot · Word       │    │
 │  └──────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -80,7 +80,8 @@ Aria is not limited to retrieving information — she is **fully actionable** vi
 | Voice | Voice Live API, Dragon HD Ava Neural voice |
 | Avatar | Meg Casual, WebRTC (H.264), base64-encoded SDP |
 | LLM | GPT-5 Realtime (`gpt-realtime-1.5`) |
-| Tools | Work IQ MCP servers (Calendar, Mail, Teams, People, Web Search) |
+| Tools | Work IQ MCP servers (Calendar, Mail, Teams, People, Copilot, Word) |
+| Weather | Open-Meteo free API (no key required) |
 | Infrastructure | Bicep (Azure AI Services, App Service, Static Web Apps) |
 
 ## Prerequisites
@@ -130,6 +131,8 @@ Copy `.env.example` to `.env` and fill in:
 | `AVATAR_STYLE` | No | Avatar style (default: `casual`) |
 | `AVATAR_BACKGROUND_URL` | No | Public URL for avatar background image (rendered server-side into video stream) |
 | `PROJECT_NAME` | No | Foundry project name (enables agent mode with tools) |
+| `USER_MEMORY_PATH` | No | Path for persistent memory file (default: `./data/user-memory.json`) |
+| `FOLLOW_UP_PATH` | No | Path for follow-up tracking file (default: `./data/follow-ups.json`) |
 
 ## Scripts
 
@@ -146,26 +149,49 @@ npm run clean    # Remove dist/ from both packages
 Avatar-Foundry/
 ├── client/                    # React frontend
 │   ├── src/
-│   │   ├── App.tsx            # Main app (login screen + main UI)
+│   │   ├── App.tsx            # Main app (login + standard/accessible mode routing)
 │   │   ├── auth/              # MSAL config
-│   │   ├── components/        # AvatarView, ConversationPanel, StatusBar, DemoControls
-│   │   ├── hooks/             # useVoiceLive (WebRTC + WebSocket + mic capture)
-│   │   └── types/             # Shared TypeScript types
+│   │   ├── components/
+│   │   │   ├── AccessibleView.tsx    # Full-screen accessible mode (no avatar)
+│   │   │   ├── AvatarView.tsx        # WebRTC HD avatar display
+│   │   │   ├── ConversationPanel.tsx  # Chat transcript with ARIA live regions
+│   │   │   ├── DashboardCard.tsx      # Reusable card (calendar/email/weather/task/action)
+│   │   │   ├── DashboardPanel.tsx     # Side panel with Quick Access + Activity feed
+│   │   │   ├── DemoControls.tsx       # 10 demo scenario triggers
+│   │   │   ├── StatusBar.tsx          # Header with status, accessibility toggle, settings
+│   │   │   └── TickerBar.tsx          # Live ticker: weather, meetings, emails, Kanban link
+│   │   ├── hooks/
+│   │   │   ├── useVoiceLive.ts        # WebRTC + WebSocket + mic + MCP card parsing
+│   │   │   └── useAccessibility.ts    # Font size, contrast, earcons, mode, preferences
+│   │   ├── styles/globals.css         # Tailwind + high contrast + reduced motion + focus
+│   │   └── types/                     # Shared TypeScript types + demo scenarios
 │   └── vite.config.ts
 ├── server/                    # Express backend
 │   ├── src/
-│   │   ├── index.ts           # Express + WebSocket proxy
+│   │   ├── index.ts           # Express + WebSocket proxy + function call dispatch
 │   │   ├── config/env.ts      # Zod environment validation
+│   │   ├── routes/
+│   │   │   ├── avatar.ts      # Avatar config + ICE token endpoints
+│   │   │   ├── health.ts      # Health check
+│   │   │   ├── session.ts     # Session management
+│   │   │   └── ticker.ts      # /api/ticker (weather) + /api/weather endpoints
 │   │   └── services/
-│   │       ├── voiceLive.ts   # Voice Live session config + connection
-│   │       └── foundryAgent.ts # Aria system prompt + agent metadata
+│   │       ├── voiceLive.ts       # Voice Live session config + MCP tools + system prompt
+│   │       ├── foundryAgent.ts    # Aria system prompt + agent metadata
+│   │       ├── weather.ts         # Open-Meteo weather API (free, no key)
+│   │       ├── userMemory.ts      # Persistent user memory (JSON file)
+│   │       ├── followUpTracker.ts # Follow-up tracking (JSON file)
+│   │       ├── meetingCountdown.ts # Proactive meeting reminders
+│   │       ├── foundryDelegate.ts # Foundry Agent delegation for research
+│   │       └── authService.ts     # MSAL OBO token exchange
 │   └── tsconfig.json
 ├── infra/                     # Bicep IaC templates
 │   ├── main.bicep
 │   └── parameters.json
 ├── .env.example               # Environment template
 ├── CLAUDE.md                  # AI assistant instructions
-└── HANDOVER.md                # Detailed technical handover document
+├── HANDOVER.md                # Detailed technical handover document
+└── ROADMAP.md                 # 20-feature roadmap across 5 phases
 ```
 
 ## Key Features
@@ -173,7 +199,17 @@ Avatar-Foundry/
 - **HD Avatar** — Photorealistic Meg Casual avatar with natural idle animations and lip sync
 - **Real-time Voice** — Sub-200ms latency bidirectional voice via Voice Live API
 - **Dragon HD Voice** — `en-US-Ava:DragonHDLatestNeural` with 100+ speaking styles
-- **Fully Actionable via Work IQ** — Goes beyond retrieval: send emails, create/update/move meetings, and more via delegated M365 MCP tools — surpassing today's Copilot read-only capabilities
+- **Fully Actionable via Work IQ** — Send emails, create/update/move meetings, create Word docs, and more via delegated M365 MCP tools
+- **Dashboard Cards** — Live side-panel cards showing calendar events, emails, weather, actions, and quick-access widgets from MCP tool results
+- **Ticker Bar** — Top-of-screen ticker with weather, meeting counts, email summaries, and Kanban board link
+- **Weather Integration** — Real-time weather via Open-Meteo free API (no key required), available as voice tool and dashboard widget
+- **10 Demo Scenarios** — Pre-built triggers: Morning Briefing, Email Triage, Meeting Prep, Schedule Meeting, Draft Email, Deep Research, Create Document, Follow-Up Check, Teams Summary, End of Day Wrap-Up
+- **Persistent Memory** — Aria remembers user preferences and facts across sessions (JSON file persistence)
+- **Follow-Up Tracking** — Track action items from conversations with proactive reminders
+- **Meeting Countdown** — Proactive notifications when meetings are approaching, with context
+- **Multi-Step Tasks** — Complex workflow orchestration with step-by-step progress tracking
+- **Foundry Agent Delegation** — Delegate complex research to background GPT-4o agent
+- **Accessibility Mode** — Full-screen chat layout (no avatar) with WCAG 2.1 AA high contrast, variable font sizes, audio earcons, ARIA live regions, keyboard focus indicators, reduced motion, and localStorage-persisted preferences
 - **Barge-in** — Interrupt the assistant mid-sentence; audio cuts instantly
 - **Tool Call Audio Cue** — Two-tone chime when MCP tool execution begins
 - **Auto-Retry** — Automatic response recovery when VAD cancels tool call responses
@@ -182,8 +218,8 @@ Avatar-Foundry/
 - **VAD Tuning** — Configurable threshold (0.8), silence duration (1200ms), and prefix padding (500ms)
 - **Mute** — Send silence when muted (keeps server_vad alive)
 - **MSAL Auth** — Enterprise SSO via Entra ID redirect flow + OBO for M365 delegation
-- **Proactive Greeting** — Aria introduces herself on session start
-- **Conversation Panel** — Auto-scrolling transcript with VQ token filtering
+- **Proactive Greeting** — Aria introduces herself on session start with memory context
+- **Conversation Panel** — Auto-scrolling transcript with VQ token filtering and ARIA labels
 
 ## Modes
 
@@ -220,6 +256,7 @@ Connects to a Foundry Agent for reasoning and tool calling. Voice Live handles t
 ## Documentation
 
 - [HANDOVER.md](./HANDOVER.md) — Detailed technical handover with architecture decisions, fixes, and known issues
+- [ROADMAP.md](./ROADMAP.md) — 20-feature roadmap across 5 phases and 7 sprints
 - [Voice Live API Reference](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-api-reference-2026-01-01-preview)
 - [Voice Live Agents Quickstart](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart)
 - [Standard Avatars](https://learn.microsoft.com/azure/ai-services/speech-service/text-to-speech-avatar/standard-avatars)

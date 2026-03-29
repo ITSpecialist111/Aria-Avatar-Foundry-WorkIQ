@@ -45,13 +45,6 @@ function saveStore(store: FollowUpStore): void {
 }
 
 /**
- * Load all follow-ups from the JSON file.
- */
-export function loadFollowUps(): FollowUp[] {
-  return loadStore().followUps;
-}
-
-/**
  * Get only pending follow-ups.
  */
 export function getPendingFollowUps(): FollowUp[] {
@@ -87,22 +80,6 @@ export function completeFollowUp(id: string): boolean {
     followUp.status = 'completed';
     saveStore(store);
     console.log(`[FollowUp] Completed follow-up ${id}`);
-    return true;
-  }
-  return false;
-}
-
-/**
- * Mark a follow-up as dismissed.
- * Returns true if the follow-up was found and updated.
- */
-export function dismissFollowUp(id: string): boolean {
-  const store = loadStore();
-  const followUp = store.followUps.find(f => f.id === id);
-  if (followUp) {
-    followUp.status = 'dismissed';
-    saveStore(store);
-    console.log(`[FollowUp] Dismissed follow-up ${id}`);
     return true;
   }
   return false;
