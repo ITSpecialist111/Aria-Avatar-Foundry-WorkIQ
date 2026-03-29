@@ -11,7 +11,7 @@
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?logo=tailwindcss&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows_%7C_macOS_%7C_Linux-lightgrey?logo=windows&logoColor=white)
 ![WCAG](https://img.shields.io/badge/WCAG-2.1_AA-228B22)
-![License](https://img.shields.io/badge/License-Private-red)
+![License](https://img.shields.io/badge/License-MIT-green)
 
 An autonomous AI Executive Assistant with HD avatar and real-time voice, powered by Microsoft Foundry.
 
@@ -291,4 +291,4 @@ Connects to a Foundry Agent for reasoning and tool calling. Voice Live handles t
 
 ## License
 
-Private — Internal use only.
+MIT License — see [LICENSE](./LICENSE) for details.
