@@ -6,7 +6,9 @@ import { ConversationPanel } from './components/ConversationPanel';
 import { StatusBar } from './components/StatusBar';
 import { TickerBar } from './components/TickerBar';
 import { DemoControls } from './components/DemoControls';
+import { AccessibleView } from './components/AccessibleView';
 import { useVoiceLive } from './hooks/useVoiceLive';
+import { useAccessibility } from './hooks/useAccessibility';
 import { DEFAULT_AVATAR_CONFIG, DEFAULT_VOICE_CONFIG } from './types';
 import { useState } from 'react';
 import type { AvatarConfig, VoiceConfig } from './types';
@@ -50,13 +52,43 @@ function MainApp() {
   const [showControls, setShowControls] = useState(false);
 
   const voiceLive = useVoiceLive({ avatarConfig, voiceConfig });
+  const accessibility = useAccessibility();
 
+  // Accessible mode — full-screen chat, no avatar
+  if (accessibility.mode === 'accessible') {
+    return (
+      <AccessibleView
+        transcript={voiceLive.transcript}
+        actions={voiceLive.actions}
+        dashboardCards={voiceLive.dashboardCards}
+        workflowSteps={voiceLive.workflowSteps}
+        sessionState={voiceLive.sessionState}
+        isMuted={voiceLive.isMuted}
+        isSpeaking={voiceLive.isSpeaking}
+        isListening={voiceLive.isListening}
+        onToggleSession={voiceLive.toggleSession}
+        onToggleMute={voiceLive.toggleMute}
+        onConfirmAction={voiceLive.confirmAction}
+        onRejectAction={voiceLive.rejectAction}
+        onToggleMode={accessibility.toggleMode}
+        fontSize={accessibility.fontSize}
+        onSetFontSize={accessibility.setFontSize}
+        highContrast={accessibility.highContrast}
+        onToggleHighContrast={accessibility.toggleHighContrast}
+        earcons={accessibility.earcons}
+        onToggleEarcons={accessibility.toggleEarcons}
+      />
+    );
+  }
+
+  // Standard mode — avatar + side panel
   return (
     <div className="h-screen flex flex-col bg-slate-950 overflow-hidden">
       <StatusBar
         sessionState={voiceLive.sessionState}
         agentName="Aria"
         onToggleControls={() => setShowControls((prev) => !prev)}
+        onToggleAccessibility={accessibility.toggleMode}
       />
       <TickerBar
         transcript={voiceLive.transcript}
