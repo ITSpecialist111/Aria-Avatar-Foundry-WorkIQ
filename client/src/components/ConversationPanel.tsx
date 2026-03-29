@@ -86,7 +86,7 @@ export function ConversationPanel({
   }, [transcript, actions]);
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col h-full min-h-0" role="complementary" aria-label="Conversation panel">
       {/* Header */}
       <div className="p-4 border-b border-slate-800">
         <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
@@ -118,7 +118,7 @@ export function ConversationPanel({
       )}
 
       {/* Scrollable content */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3" role="log" aria-label="Conversation messages" aria-live="polite">
         {transcript.length === 0 && actions.length === 0 && (
           <div className="text-center text-slate-500 mt-12">
             <p className="text-sm">Start a conversation with Aria</p>

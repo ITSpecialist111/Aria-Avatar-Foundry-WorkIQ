@@ -30,12 +30,12 @@ export function startMeetingCountdown(voiceLiveWs: WebSocket): void {
   };
   activeSessions.set(voiceLiveWs, session);
 
-  // Delay first check by 60s to let the greeting response finish,
-  // then poll every 10 minutes
+  // Delay first check by 120s to let the greeting + any auto-launched
+  // tool calls (weather, calendar) finish before injecting a new response
   session.timer = setTimeout(() => {
     pollNextMeeting(session);
     session.pollTimer = setInterval(() => pollNextMeeting(session), 10 * 60 * 1000);
-  }, 60 * 1000);
+  }, 120 * 1000);
 }
 
 /**
