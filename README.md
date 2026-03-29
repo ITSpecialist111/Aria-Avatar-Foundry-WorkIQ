@@ -1,5 +1,18 @@
 # Avatar Foundry
 
+![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178C6?logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=nodedotjs&logoColor=white)
+![Azure AI](https://img.shields.io/badge/Azure_AI-Voice_Live-0078D4?logo=microsoftazure&logoColor=white)
+![GPT-5](https://img.shields.io/badge/GPT--5-Realtime-412991?logo=openai&logoColor=white)
+![MCP Tools](https://img.shields.io/badge/MCP-Work_IQ_Tools-FF6F00?logo=microsoft&logoColor=white)
+![WebRTC](https://img.shields.io/badge/WebRTC-HD_Avatar-333333?logo=webrtc&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?logo=tailwindcss&logoColor=white)
+![Platform](https://img.shields.io/badge/Platform-Windows_%7C_macOS_%7C_Linux-lightgrey?logo=windows&logoColor=white)
+![WCAG](https://img.shields.io/badge/WCAG-2.1_AA-228B22)
+![License](https://img.shields.io/badge/License-Private-red)
+
 An autonomous AI Executive Assistant with HD avatar and real-time voice, powered by Microsoft Foundry.
 
 **Aria** is a full-body, photorealistic AI assistant that can see, hear, and speak — built on Azure's Voice Live API, GPT-5 Realtime, and the Meg Casual avatar via WebRTC.
