@@ -104,6 +104,21 @@ const DELEGATION_FUNCTION_TOOLS = [
   },
 ];
 
+/** Function tool for weather lookups */
+const WEATHER_FUNCTION_TOOLS = [
+  {
+    type: 'function' as const,
+    name: 'get_weather',
+    description: 'Get the current weather for a city. Defaults to London if no city specified. Use this for weather queries, morning briefings, and proactive weather updates.',
+    parameters: {
+      type: 'object',
+      properties: {
+        city: { type: 'string', description: 'City name (default: London)' },
+      },
+    },
+  },
+];
+
 export interface VoiceLiveSession {
   ws: WebSocket;
   sessionId?: string;
@@ -192,14 +207,14 @@ export function buildSessionConfig(oboToken?: string) {
 
     if (hasMcpTools) {
       session.instructions = ARIA_SYSTEM_PROMPT_WITH_TOOLS;
-      session.tools = [...buildMcpTools(oboToken, env.WORKIQ_ENVIRONMENT_ID!), ...MEMORY_FUNCTION_TOOLS, ...FOLLOW_UP_FUNCTION_TOOLS, ...DELEGATION_FUNCTION_TOOLS];
+      session.tools = [...buildMcpTools(oboToken, env.WORKIQ_ENVIRONMENT_ID!), ...MEMORY_FUNCTION_TOOLS, ...FOLLOW_UP_FUNCTION_TOOLS, ...DELEGATION_FUNCTION_TOOLS, ...WEATHER_FUNCTION_TOOLS];
       session.tool_choice = 'auto';
-      console.log(`[VL] Using inline mode + ${WORKIQ_MCP_SERVERS.length} MCP tools + ${MEMORY_FUNCTION_TOOLS.length} memory tools + ${FOLLOW_UP_FUNCTION_TOOLS.length} follow-up tools + ${DELEGATION_FUNCTION_TOOLS.length} delegation tools`);
+      console.log(`[VL] Using inline mode + ${WORKIQ_MCP_SERVERS.length} MCP tools + ${MEMORY_FUNCTION_TOOLS.length} memory + ${FOLLOW_UP_FUNCTION_TOOLS.length} follow-up + ${DELEGATION_FUNCTION_TOOLS.length} delegation + ${WEATHER_FUNCTION_TOOLS.length} weather tools`);
     } else {
       session.instructions = ARIA_SYSTEM_PROMPT;
-      session.tools = [...MEMORY_FUNCTION_TOOLS, ...FOLLOW_UP_FUNCTION_TOOLS, ...DELEGATION_FUNCTION_TOOLS];
+      session.tools = [...MEMORY_FUNCTION_TOOLS, ...FOLLOW_UP_FUNCTION_TOOLS, ...DELEGATION_FUNCTION_TOOLS, ...WEATHER_FUNCTION_TOOLS];
       session.tool_choice = 'auto';
-      console.log(`[VL] Using inline mode with ${MEMORY_FUNCTION_TOOLS.length} memory + ${FOLLOW_UP_FUNCTION_TOOLS.length} follow-up + ${DELEGATION_FUNCTION_TOOLS.length} delegation tools (no MCP — missing OBO token or WORKIQ_ENVIRONMENT_ID)`);
+      console.log(`[VL] Using inline mode with ${MEMORY_FUNCTION_TOOLS.length} memory + ${FOLLOW_UP_FUNCTION_TOOLS.length} follow-up + ${DELEGATION_FUNCTION_TOOLS.length} delegation + ${WEATHER_FUNCTION_TOOLS.length} weather tools (no MCP — missing OBO token or WORKIQ_ENVIRONMENT_ID)`);
     }
 
     // Inject persistent memory summary into instructions
@@ -289,7 +304,16 @@ RESEARCH DELEGATION:
 - For complex research, analysis, or comparison tasks that go beyond simple calendar/email lookups, use the delegate_to_research_agent tool.
 - This delegates to a background AI agent that can provide comprehensive analysis.
 - Tell the user you're delegating the research, then present the findings when they come back.
-- Examples: "Research the pros and cons of agile vs waterfall", "Analyze the key trends in AI for 2026", "Compare different approaches to team productivity".`;
+- Examples: "Research the pros and cons of agile vs waterfall", "Analyze the key trends in AI for 2026", "Compare different approaches to team productivity".
+
+WEATHER:
+- You have a get_weather tool that fetches real-time weather from Open-Meteo.
+- Use it when the user asks about weather, or include it in morning briefings. Default city is London.
+- Present weather naturally: "It's currently 15 degrees and partly cloudy in London."
+
+MORNING BRIEFING:
+- When the user asks for a morning briefing, automatically run through: weather (get_weather), calendar (copilot), important emails (copilot), and pending follow-ups (list_follow_ups).
+- Present each section conversationally without being asked for each one.`;
 
 /**
  * Build a session.update that removes tools and switches to no-tools prompt.

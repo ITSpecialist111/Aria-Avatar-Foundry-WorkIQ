@@ -4,6 +4,7 @@ import { loginScopes } from './auth/msalConfig';
 import { AvatarView } from './components/AvatarView';
 import { ConversationPanel } from './components/ConversationPanel';
 import { StatusBar } from './components/StatusBar';
+import { TickerBar } from './components/TickerBar';
 import { DemoControls } from './components/DemoControls';
 import { useVoiceLive } from './hooks/useVoiceLive';
 import { DEFAULT_AVATAR_CONFIG, DEFAULT_VOICE_CONFIG } from './types';
@@ -56,6 +57,10 @@ function MainApp() {
         sessionState={voiceLive.sessionState}
         agentName="Aria"
         onToggleControls={() => setShowControls((prev) => !prev)}
+      />
+      <TickerBar
+        transcript={voiceLive.transcript}
+        sessionActive={voiceLive.sessionState === 'active' || voiceLive.sessionState === 'connected'}
       />
 
       <div className="flex-1 flex overflow-hidden">
