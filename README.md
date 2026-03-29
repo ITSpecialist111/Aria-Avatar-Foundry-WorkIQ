@@ -14,6 +14,18 @@ An autonomous AI Executive Assistant with HD avatar and real-time voice, powered
 
 Aria responds with natural speech and lip-synced HD avatar video in real-time. She can manage your calendar, search the web, send emails, and handle Teams meetings — all through voice.
 
+## Why a Visual Avatar?
+
+The HD avatar isn't just eye candy — it unlocks real-world scenarios where a visual presence provides genuine value over voice-only or text interfaces:
+
+**Accessibility & Inclusion** — Deaf and hard-of-hearing users can rely on the avatar's accurate lip sync as a visual speech channel. Users with cognitive disabilities process information better with a visual anchor and facial cues. Elderly users in healthcare and banking find a face more approachable than a disembodied voice.
+
+**Customer-Facing Kiosks & Reception** — Hotel check-in, airport information desks, retail, government services. A face on a screen replaces a staffed desk 24/7 at a fraction of the cost. The Government of Malta already uses avatar agents for public services.
+
+**Contact Centers at Scale** — Video-enabled support for high-value customers in banking, insurance, and telecoms. At scale, avatar cost per-customer-minute is still significantly cheaper than a fully loaded human agent, while research consistently shows people trust and retain information better from a face vs. voice-only.
+
+**Healthcare** — Patient-facing clinical assistants, mental health check-ins where a face reduces isolation, and medication reminders for elderly patients who respond better to a "person" than a notification.
+
 ## Actionable via WorkIQ
 
 Aria is not limited to retrieving information — she is **fully actionable** via Work IQ MCP servers. Using delegated Entra ID (OBO) tokens, she can act on your behalf across Microsoft 365:
