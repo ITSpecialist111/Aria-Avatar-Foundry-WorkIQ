@@ -76,9 +76,15 @@ Aria is not limited to retrieving information — she is **fully actionable** vi
 │  ┌──────────────────────────────────────────────────────────┐    │
 │  │  WebSocket Proxy (/ws/voice-live)                        │    │
 │  │  - Entra ID auth (DefaultAzureCredential)                │    │
-│  │  - OBO token exchange for Work IQ MCP                    │    │
+│  │  - Dual OBO token exchange (MCP + Graph API)             │    │
 │  │  - session.update → Voice Live API (with MCP tools)      │    │
+│  │  - Function call dispatch (calendar, email, weather)     │    │
 │  │  - Bidirectional message forwarding                      │    │
+│  └──────────────────────────────────────────────────────────┘    │
+│  ┌──────────────────────────────────────────────────────────┐    │
+│  │  Direct Graph API (/me/calendarView, /me/messages)       │    │
+│  │  - OBO token with Calendars.Read + Mail.Read scopes      │    │
+│  │  - Compact responses optimized for voice (~2-3s)         │    │
 │  └──────────────────────────────────────────────────────────┘    │
 │  REST: /api/health, /api/avatar/config, /api/avatar/ice, /api/ticker, /api/weather, /api/smoke-test │
 └───────────────────────────┬──────────────────────────────────────┘
@@ -108,6 +114,7 @@ Aria is not limited to retrieving information — she is **fully actionable** vi
 | Avatar | Meg Casual, WebRTC (H.264), base64-encoded SDP |
 | LLM | GPT-5 Realtime (`gpt-realtime-1.5`) |
 | Tools | Work IQ MCP servers (Calendar, Mail, Teams, People, Copilot, Word) + Direct Graph API (Calendar reads, Email reads) |
+| Auth Scopes | `User.Read`, `Calendars.Read`, `Mail.Read` (Graph delegated) + Agent365 MCP OBO |
 | Weather | Open-Meteo free API (no key required) |
 | Infrastructure | Bicep (Azure AI Services, App Service, Static Web Apps) |
 
@@ -117,6 +124,7 @@ Aria is not limited to retrieving information — she is **fully actionable** vi
 - **Azure CLI** logged in (`az login`)
 - **Azure AI Services** resource in a [supported region](https://learn.microsoft.com/azure/ai-services/speech-service/text-to-speech-avatar/standard-avatars) (eastus2, westus2, northeurope, swedencentral, southeastasia, southcentralus, westeurope)
 - **App Registration** with SPA redirect URI (`http://localhost:3000`)
+- **App Registration API Permissions**: `User.Read`, `Calendars.Read`, `Mail.Read` (Graph delegated, admin consented) + Agent365 Tools API scopes
 - RBAC: **Cognitive Services User** + **Azure AI User** on the AI Services resource
 
 ## Quick Start
@@ -201,16 +209,19 @@ Avatar-Foundry/
 │   │   │   ├── avatar.ts      # Avatar config + ICE token endpoints
 │   │   │   ├── health.ts      # Health check
 │   │   │   ├── session.ts     # Session management
+│   │   │   ├── smokeTest.ts   # /api/smoke-test — OBO + MCP tool discovery test
 │   │   │   └── ticker.ts      # /api/ticker (weather) + /api/weather endpoints
 │   │   └── services/
 │   │       ├── voiceLive.ts       # Voice Live session config + MCP tools + system prompt
 │   │       ├── foundryAgent.ts    # Aria system prompt + agent metadata
+│   │       ├── calendarService.ts # Direct Graph API calendar reads (bypasses MCP)
+│   │       ├── emailService.ts    # Direct Graph API email reads (bypasses MCP)
 │   │       ├── weather.ts         # Open-Meteo weather API (free, no key)
 │   │       ├── userMemory.ts      # Persistent user memory (JSON file)
 │   │       ├── followUpTracker.ts # Follow-up tracking (JSON file)
-│   │       ├── meetingCountdown.ts # Proactive meeting reminders
+│   │       ├── meetingCountdown.ts # Proactive meeting reminders (direct Graph API)
 │   │       ├── foundryDelegate.ts # Foundry Agent delegation for research
-│   │       └── authService.ts     # MSAL OBO token exchange
+│   │       └── authService.ts     # MSAL OBO token exchange (audience-keyed clients)
 │   └── tsconfig.json
 ├── infra/                     # Bicep IaC templates
 │   ├── main.bicep
@@ -226,13 +237,16 @@ Avatar-Foundry/
 - **Real-time Voice** — Sub-200ms latency bidirectional voice via Voice Live API
 - **Dragon HD Voice** — `en-US-Ava3:DragonHDLatestNeural` with 100+ speaking styles
 - **Fully Actionable via Work IQ** — Send emails, create/update/move meetings, create Word docs, and more via delegated M365 MCP tools
+- **Three-Tier Tool Routing** — Fast custom Graph API tools (~2-3s) for calendar/email reads, MCP tools (~4-6s) for M365 write actions, copilot_chat (~15-20s) only for complex analytics
+- **Direct Graph API** — Calendar and email reads bypass slow MCP tools via direct Microsoft Graph API calls with OBO tokens, returning compact data optimized for voice responses
 - **Dashboard Cards** — Live side-panel cards showing calendar events, emails, weather, actions, and quick-access widgets from MCP tool results
 - **Ticker Bar** — Top-of-screen ticker with weather, meeting counts, email summaries, and Kanban board link
 - **Weather Integration** — Real-time weather via Open-Meteo free API (no key required), available as voice tool and dashboard widget
 - **10 Demo Scenarios** — Pre-built triggers: Morning Briefing, Email Triage, Meeting Prep, Schedule Meeting, Draft Email, Deep Research, Create Document, Follow-Up Check, Teams Summary, End of Day Wrap-Up
+- **Smoke Test Endpoint** — `/api/smoke-test` tests OBO exchange and MCP tool discovery on all 6 servers in parallel with per-server timing
 - **Persistent Memory** — Aria remembers user preferences and facts across sessions (JSON file persistence)
 - **Follow-Up Tracking** — Track action items from conversations with proactive reminders
-- **Meeting Countdown** — Proactive notifications when meetings are approaching, with context
+- **Meeting Countdown** — Proactive notifications when meetings are approaching via direct Graph API (every 5min, only alerts when meetings exist)
 - **Multi-Step Tasks** — Complex workflow orchestration with step-by-step progress tracking
 - **Foundry Agent Delegation** — Delegate complex research to background GPT-4o agent
 - **Accessibility Mode** — Full-screen chat layout (no avatar) with WCAG 2.1 AA high contrast, variable font sizes, audio earcons, ARIA live regions, keyboard focus indicators, reduced motion, and localStorage-persisted preferences
