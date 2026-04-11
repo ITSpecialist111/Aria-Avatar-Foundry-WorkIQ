@@ -1,12 +1,27 @@
+import { useState } from 'react';
 import { X } from 'lucide-react';
 import { DEMO_SCENARIOS } from '../types';
 import type { AvatarConfig, DemoScenario } from '../types';
+
+interface SmokeTestServer {
+  label: string;
+  discovery: { status: string; durationMs: number; toolCount?: number };
+  toolCall?: { status: string; durationMs: number };
+}
+
+interface SmokeTestData {
+  obo?: { status: string; durationMs: number };
+  servers?: SmokeTestServer[];
+  summary?: { totalMs: number; slowestServer?: string };
+  error?: string;
+}
 
 interface DemoControlsProps {
   avatarConfig: AvatarConfig;
   onAvatarChange: (config: AvatarConfig) => void;
   onClose: () => void;
   onSelectScenario: (scenario: DemoScenario) => void;
+  onRunSmokeTest?: () => Promise<unknown>;
 }
 
 const AVATAR_PRESETS = [
@@ -30,7 +45,9 @@ export function DemoControls({
   onAvatarChange,
   onClose,
   onSelectScenario,
+  onRunSmokeTest,
 }: DemoControlsProps) {
+  const [smokeTestResult, setSmokeTestResult] = useState<{ running: boolean; data?: SmokeTestData }>({ running: false });
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="glass-panel p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto space-y-6">
@@ -97,6 +114,54 @@ export function DemoControls({
             ))}
           </div>
         </section>
+        {/* Smoke Test */}
+        {onRunSmokeTest && (
+          <section className="space-y-3">
+            <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider">WorkIQ Smoke Test</h3>
+            <button
+              onClick={async () => {
+                setSmokeTestResult({ running: true });
+                const data = await onRunSmokeTest() as SmokeTestData;
+                setSmokeTestResult({ running: false, data });
+              }}
+              disabled={smokeTestResult.running}
+              className="w-full px-4 py-3 rounded-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 transition-colors text-sm font-medium text-white"
+            >
+              {smokeTestResult.running ? 'Testing MCP servers...' : 'Run MCP Smoke Test'}
+            </button>
+            {smokeTestResult.data && (
+              <div className="text-xs font-mono bg-slate-900 rounded-lg p-3 max-h-60 overflow-y-auto space-y-1">
+                {smokeTestResult.data.obo && (
+                  <p className="text-slate-300">
+                    OBO: <span className={smokeTestResult.data.obo.status === 'ok' ? 'text-green-400' : 'text-red-400'}>
+                      {smokeTestResult.data.obo.durationMs}ms — {smokeTestResult.data.obo.status}
+                    </span>
+                  </p>
+                )}
+                {smokeTestResult.data.servers?.map((s) => (
+                  <p key={s.label} className="text-slate-300">
+                    {s.label}: <span className={s.discovery.status === 'ok' ? 'text-green-400' : 'text-red-400'}>
+                      {s.discovery.durationMs}ms
+                    </span>
+                    {' '}({s.discovery.toolCount ?? 0} tools)
+                    {s.toolCall?.status === 'ok' && (
+                      <span className="text-blue-400"> | call: {s.toolCall.durationMs}ms</span>
+                    )}
+                  </p>
+                ))}
+                {smokeTestResult.data.summary && (
+                  <p className="text-slate-400 pt-1 border-t border-slate-700">
+                    Total: {smokeTestResult.data.summary.totalMs}ms | Slowest: {smokeTestResult.data.summary.slowestServer ?? 'N/A'}
+                  </p>
+                )}
+                {smokeTestResult.data.error && (
+                  <p className="text-red-400">{smokeTestResult.data.error}</p>
+                )}
+              </div>
+            )}
+            <p className="text-xs text-slate-500">Tests OBO token exchange + MCP server tool discovery. Check browser console for details.</p>
+          </section>
+        )}
       </div>
     </div>
   );

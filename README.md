@@ -80,7 +80,7 @@ Aria is not limited to retrieving information — she is **fully actionable** vi
 │  │  - session.update → Voice Live API (with MCP tools)      │    │
 │  │  - Bidirectional message forwarding                      │    │
 │  └──────────────────────────────────────────────────────────┘    │
-│  REST: /api/health, /api/avatar/config, /api/avatar/ice, /api/ticker, /api/weather │
+│  REST: /api/health, /api/avatar/config, /api/avatar/ice, /api/ticker, /api/weather, /api/smoke-test │
 └───────────────────────────┬──────────────────────────────────────┘
                             │ WSS (Bearer token)
 ┌───────────────────────────▼──────────────────────────────────────┐
@@ -107,7 +107,7 @@ Aria is not limited to retrieving information — she is **fully actionable** vi
 | Voice | Voice Live API, Dragon HD Ava3 Neural voice |
 | Avatar | Meg Casual, WebRTC (H.264), base64-encoded SDP |
 | LLM | GPT-5 Realtime (`gpt-realtime-1.5`) |
-| Tools | Work IQ MCP servers (Calendar, Mail, Teams, People, Copilot, Word) |
+| Tools | Work IQ MCP servers (Calendar, Mail, Teams, People, Copilot, Word) + Direct Graph API (Calendar reads, Email reads) |
 | Weather | Open-Meteo free API (no key required) |
 | Infrastructure | Bicep (Azure AI Services, App Service, Static Web Apps) |
 

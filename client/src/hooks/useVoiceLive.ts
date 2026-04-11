@@ -29,6 +29,7 @@ interface UseVoiceLiveReturn {
   sendTextMessage: (text: string) => void;
   confirmAction: (actionId: string) => void;
   rejectAction: (actionId: string) => void;
+  runSmokeTest: () => Promise<unknown>;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   audioRef: React.RefObject<HTMLAudioElement | null>;
 }
@@ -54,10 +55,14 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
   const isMutedRef = useRef(false);
   // Track pending MCP tool responses to auto-retry on turn_detected cancellation
   const mcpCallPendingRef = useRef(false);
+  // Track MCP call start times for client-side latency measurement
+  const mcpCallTimersRef = useRef<Map<string, { name: string; server: string; startTime: number }>>(new Map());
   const autoRetryCountRef = useRef(0);
   const MAX_AUTO_RETRIES = 3;
   // Track response boundaries for workflow step accumulation
   const currentResponseIdRef = useRef<string | null>(null);
+  // Track whether current response produced non-empty audio (for duplicate MCP call detection)
+  const currentResponseHasAudioRef = useRef(false);
 
   // Audio playback state
   const playbackContextRef = useRef<AudioContext | null>(null);
@@ -424,6 +429,7 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
         case 'response.created':
           // Track response boundary for workflow step accumulation
           currentResponseIdRef.current = data.response?.id || null;
+          currentResponseHasAudioRef.current = false;
           break;
 
         case 'response.audio_transcript.done': {
@@ -436,6 +442,7 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
           console.log('[VL] Audio transcript done:', cleanTranscript?.substring(0, 80));
           if (cleanTranscript && !cleanTranscript.startsWith('{') && !/^\s*audio\s*$/i.test(cleanTranscript)) {
             addTranscript({ role: 'assistant', content: cleanTranscript });
+            currentResponseHasAudioRef.current = true;
           }
           break;
         }
@@ -527,6 +534,11 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
           const addedItem = data.item;
           if (addedItem?.type === 'mcp_call') {
             console.log('[VL] MCP call started:', addedItem.name, '| server:', addedItem.server_label, '| id:', addedItem.id);
+            mcpCallTimersRef.current.set(addedItem.id, {
+              name: addedItem.name,
+              server: addedItem.server_label,
+              startTime: performance.now(),
+            });
             playToolCallTone();
             const mcpAction: Omit<AgentAction, 'id' | 'timestamp'> = {
               type: inferActionType(addedItem.name || ''),
@@ -555,11 +567,17 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
         case 'response.output_item.done': {
           const doneItem = data.item;
           if (doneItem?.type === 'mcp_call') {
+            const timer = mcpCallTimersRef.current.get(doneItem.id);
+            const latencyMs = timer ? Math.round(performance.now() - timer.startTime) : -1;
+            mcpCallTimersRef.current.delete(doneItem.id);
             const outputPreview = typeof doneItem.output === 'string'
               ? doneItem.output.substring(0, 500)
               : JSON.stringify(doneItem.output)?.substring(0, 500);
-            console.log('[VL] MCP call done:', doneItem.name, '| server:', doneItem.server_label);
+            console.log(`[VL] MCP call done: ${doneItem.name} | server: ${doneItem.server_label} | ${latencyMs}ms`);
             console.log('[VL] MCP output:', outputPreview);
+            if (latencyMs > 8000) {
+              console.warn(`[VL] ⚠ SLOW MCP CALL: ${doneItem.name} took ${latencyMs}ms`);
+            }
             if (doneItem.error) {
               console.error('[VL] MCP error:', JSON.stringify(doneItem.error));
             }
@@ -629,9 +647,13 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
               wsRef.current.send(JSON.stringify({ type: 'response.create' }));
             }
           } else if (respStatus === 'completed' && hasMessage) {
-            // Successful message response — clear retry state
-            mcpCallPendingRef.current = false;
-            autoRetryCountRef.current = 0;
+            // Only clear MCP pending if we actually got a non-empty spoken response
+            if (currentResponseHasAudioRef.current || !mcpCallPendingRef.current) {
+              mcpCallPendingRef.current = false;
+              autoRetryCountRef.current = 0;
+            } else {
+              console.log('[VL] Empty message response after MCP call — keeping mcpCallPending (GPT-5 may auto-retry)');
+            }
           } else if (respStatus === 'completed' && hasMcpCall) {
             // MCP call response completed — keep mcpCallPendingRef, waiting for follow-up message
             console.log('[VL] MCP call response completed — awaiting follow-up message');
@@ -688,6 +710,46 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
       // Binary data or non-JSON — ignore
     }
   }, [addTranscript, startMicCapture, playAudioChunk, stopPlayback, startAvatarViaVoiceLive, playToolCallTone, parseMcpOutputToCards, workflowSteps]);
+
+  /** Run smoke test against all WorkIQ MCP servers */
+  const runSmokeTest = useCallback(async () => {
+    try {
+      const accounts = instance.getAllAccounts();
+      const account = accounts[0];
+      if (!account) throw new Error('Not signed in');
+
+      const tokenResponse = await instance.acquireTokenSilent({
+        scopes: [`api://${import.meta.env.VITE_MSAL_CLIENT_ID || '9b00c7ab-2ec3-463f-9a30-0dbfbb3800af'}/access_as_user`],
+        account,
+      });
+
+      console.log('[SmokeTest] Running...');
+      const start = performance.now();
+      const res = await fetch('/api/smoke-test', {
+        headers: { Authorization: `Bearer ${tokenResponse.accessToken}` },
+      });
+      const data = await res.json();
+      const totalMs = Math.round(performance.now() - start);
+
+      console.log(`[SmokeTest] Completed in ${totalMs}ms`);
+      console.log('[SmokeTest] OBO exchange:', data.obo?.durationMs + 'ms', data.obo?.status);
+      if (data.servers) {
+        console.table(data.servers.map((s: { label: string; discovery: { status: string; durationMs: number; toolCount?: number }; toolCall?: { status: string; durationMs: number } }) => ({
+          Server: s.label,
+          'Discovery (ms)': s.discovery.durationMs,
+          'Discovery Status': s.discovery.status,
+          'Tools Found': s.discovery.toolCount ?? '-',
+          'Tool Call (ms)': s.toolCall?.durationMs ?? '-',
+          'Tool Call Status': s.toolCall?.status ?? '-',
+        })));
+      }
+      console.log('[SmokeTest] Summary:', data.summary);
+      return data;
+    } catch (err) {
+      console.error('[SmokeTest] Failed:', err);
+      return { error: (err as Error).message };
+    }
+  }, [instance]);
 
   const toggleSession = useCallback(async () => {
     if (sessionState === 'connected' || sessionState === 'active') {
@@ -801,6 +863,7 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
     sendTextMessage,
     confirmAction,
     rejectAction,
+    runSmokeTest,
     videoRef,
     audioRef,
   };

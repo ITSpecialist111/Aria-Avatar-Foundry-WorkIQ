@@ -1,79 +1,88 @@
 import { WebSocket } from 'ws';
-
-interface MeetingInfo {
-  title: string;
-  startTime: Date;
-  attendees?: string;
-}
+import { getUpcomingMeetings } from './calendarService';
 
 interface CountdownSession {
   timer: NodeJS.Timeout | null;
   pollTimer: NodeJS.Timeout | null;
   voiceLiveWs: WebSocket;
-  nextMeeting: MeetingInfo | null;
+  graphToken: string;
 }
 
 const activeSessions = new Map<WebSocket, CountdownSession>();
 
 /**
  * Start monitoring for upcoming meetings.
- * After the session is configured, we inject a system message asking copilot about
- * the next meeting, then parse the response to set up a countdown timer.
+ * Uses direct Graph API calls (~2-3s) instead of routing through
+ * GPT-5 → copilot_chat (~19s) for each check.
+ * Only notifies Aria when there IS an upcoming meeting.
+ *
+ * @param voiceLiveWs - The Voice Live WebSocket connection
+ * @param graphToken - Graph API OBO token with Calendars.Read scope
  */
-export function startMeetingCountdown(voiceLiveWs: WebSocket): void {
-  // Create session entry
+export function startMeetingCountdown(voiceLiveWs: WebSocket, graphToken?: string): void {
+  if (!graphToken) {
+    console.log('[MeetingCountdown] No Graph token — skipping meeting monitoring');
+    return;
+  }
+
   const session: CountdownSession = {
     timer: null,
     pollTimer: null,
     voiceLiveWs,
-    nextMeeting: null,
+    graphToken,
   };
   activeSessions.set(voiceLiveWs, session);
 
   // Delay first check by 120s to let the greeting + any auto-launched
-  // tool calls (weather, calendar) finish before injecting a new response
+  // tool calls finish before injecting a new response
   session.timer = setTimeout(() => {
     pollNextMeeting(session);
-    session.pollTimer = setInterval(() => pollNextMeeting(session), 10 * 60 * 1000);
+    // Check every 5 minutes (down from 10 — it's fast now)
+    session.pollTimer = setInterval(() => pollNextMeeting(session), 5 * 60 * 1000);
   }, 120 * 1000);
+
+  console.log('[MeetingCountdown] Started — first check in 120s, then every 5min');
 }
 
 /**
- * Ask copilot for the next meeting and set up a reminder timer.
+ * Check for upcoming meetings via direct Graph API call.
+ * Only notifies Aria if there's actually a meeting within 10 minutes.
  */
-function pollNextMeeting(session: CountdownSession): void {
+async function pollNextMeeting(session: CountdownSession): Promise<void> {
   if (session.voiceLiveWs.readyState !== WebSocket.OPEN) return;
 
-  // We can't directly call MCP tools from the server -- they go through the LLM.
-  // Instead, we inject a system message asking Aria to proactively check
-  // if there's an upcoming meeting in the next 10 minutes.
-  injectMeetingCheck(session);
-}
+  try {
+    const meetings = await getUpcomingMeetings(session.graphToken, 10);
 
-/**
- * Inject a system message asking Aria to check for upcoming meetings.
- */
-function injectMeetingCheck(session: CountdownSession): void {
-  if (session.voiceLiveWs.readyState !== WebSocket.OPEN) return;
+    if (meetings.length === 0) {
+      console.log('[MeetingCountdown] No upcoming meetings in next 10 minutes');
+      return;
+    }
 
-  const now = new Date();
-  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    // There are upcoming meetings — notify Aria to alert the user
+    const meetingSummary = meetings.map(m => {
+      const startTime = new Date(m.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      return `"${m.subject}" at ${startTime}${m.organizer ? ` (organized by ${m.organizer})` : ''}`;
+    }).join('; ');
 
-  session.voiceLiveWs.send(JSON.stringify({
-    type: 'conversation.item.create',
-    item: {
-      type: 'message',
-      role: 'system',
-      content: [{
-        type: 'input_text',
-        text: `PROACTIVE CHECK (current time: ${timeStr}): Use the copilot tool to check if the user has any meetings starting in the next 10 minutes. If yes, proactively remind them about the upcoming meeting — mention the meeting title, time, and attendees. If no meetings are coming up soon, say nothing and do not respond at all. This is a background check — only speak if there IS an upcoming meeting.`,
-      }],
-    },
-  }));
+    console.log(`[MeetingCountdown] ${meetings.length} upcoming meeting(s): ${meetingSummary}`);
 
-  session.voiceLiveWs.send(JSON.stringify({ type: 'response.create' }));
+    session.voiceLiveWs.send(JSON.stringify({
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'system',
+        content: [{
+          type: 'input_text',
+          text: `PROACTIVE MEETING ALERT: The user has ${meetings.length === 1 ? 'a meeting' : `${meetings.length} meetings`} starting very soon: ${meetingSummary}. Briefly remind the user about this upcoming meeting — mention the title and time. Keep it to one sentence.`,
+        }],
+      },
+    }));
 
-  console.log(`[MeetingCountdown] Injected meeting check at ${timeStr}`);
+    session.voiceLiveWs.send(JSON.stringify({ type: 'response.create' }));
+  } catch (err) {
+    console.error('[MeetingCountdown] Check failed:', (err as Error).message);
+  }
 }
 
 /**

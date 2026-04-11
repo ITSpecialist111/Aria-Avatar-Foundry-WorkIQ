@@ -12,10 +12,13 @@ import { createFollowUp, completeFollowUp, getPendingFollowUps } from './service
 import { startMeetingCountdown, stopMeetingCountdown } from './services/meetingCountdown';
 import { delegateToAgent } from './services/foundryDelegate';
 import { getWeather } from './services/weather';
+import { getCalendarEvents } from './services/calendarService';
+import { getRecentEmails } from './services/emailService';
 import healthRouter from './routes/health';
 import avatarRouter from './routes/avatar';
 import sessionRouter from './routes/session';
 import tickerRouter from './routes/ticker';
+import smokeTestRouter from './routes/smokeTest';
 
 const { app } = expressWs(express());
 const credential = new DefaultAzureCredential();
@@ -30,6 +33,7 @@ app.use('/api', healthRouter);
 app.use('/api/avatar', avatarRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api', tickerRouter);
+app.use('/api/smoke-test', smokeTestRouter);
 
 // WebSocket proxy: Client <-> Backend <-> Voice Live API
 app.ws('/ws/voice-live', async (clientWs, req) => {
@@ -70,11 +74,14 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
   let greetingSent = false;
   let sessionConfigured = false;
   let oboToken: string | undefined;
+  let graphToken: string | undefined;
   let mcpFailCount = 0;
   let mcpToolsSent = 0;
 
   // Track pending function call arguments (for memory tools)
   const pendingFunctionCalls = new Map<string, { name: string; callId: string }>();
+  // Track MCP call start times for latency measurement
+  const mcpCallTimers = new Map<string, { name: string; server: string; startTime: number }>();
 
   // Try OBO exchange if client secret is configured
   if (env.MSAL_CLIENT_SECRET && env.WORKIQ_ENVIRONMENT_ID) {
@@ -83,10 +90,22 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
       // Scope: Agent 365 Tools API app ID (same as Agent365-Bridge)
       const mcpScope = 'ea9ffc3e-8a23-4a7d-836d-234d7c7565c1/.default';
       console.log('[WS] Trying OBO with scope:', mcpScope);
+      const oboStart = performance.now();
       oboToken = await exchangeTokenOBO(token, [mcpScope]);
-      console.log('[WS] OBO token acquired for Agent 365 MCP');
+      const oboMs = Math.round(performance.now() - oboStart);
+      console.log(`[WS] OBO token acquired for Agent 365 MCP (${oboMs}ms)`);
     } catch (error) {
       console.warn('[WS] OBO exchange failed — running without MCP tools:', (error as Error).message);
+    }
+
+    // Second OBO exchange: Graph API token for direct calendar/mail access
+    try {
+      const graphStart = performance.now();
+      graphToken = await exchangeTokenOBO(token, ['https://graph.microsoft.com/Calendars.Read', 'https://graph.microsoft.com/Mail.Read']);
+      const graphMs = Math.round(performance.now() - graphStart);
+      console.log(`[WS] Graph API token acquired (${graphMs}ms)`);
+    } catch (error) {
+      console.warn('[WS] Graph OBO exchange failed — calendar function tool unavailable:', (error as Error).message);
     }
   } else {
     console.log('[WS] No MSAL_CLIENT_SECRET or WORKIQ_ENVIRONMENT_ID — skipping OBO/MCP');
@@ -192,11 +211,24 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
           console.log('[WS] MCP tool discovery completed for item:', event.item_id);
         }
         // Log MCP call results from output_item.done (this is where the actual output lives)
+        if (event.type === 'response.output_item.added' && event.item?.type === 'mcp_call') {
+          mcpCallTimers.set(event.item.id, {
+            name: event.item.name,
+            server: event.item.server_label,
+            startTime: performance.now(),
+          });
+        }
         if (event.type === 'response.output_item.done' && event.item?.type === 'mcp_call') {
+          const timer = mcpCallTimers.get(event.item.id);
+          const latencyMs = timer ? Math.round(performance.now() - timer.startTime) : -1;
+          mcpCallTimers.delete(event.item.id);
           const output = typeof event.item.output === 'string'
             ? event.item.output.substring(0, 1000)
             : JSON.stringify(event.item.output)?.substring(0, 1000);
-          console.log(`[WS] MCP RESULT: ${event.item.name} (${event.item.server_label}) → ${output || 'NO OUTPUT'}`);
+          console.log(`[WS] MCP RESULT: ${event.item.name} (${event.item.server_label}) → ${latencyMs}ms → ${output?.length || 0} chars`);
+          if (latencyMs > 8000) {
+            console.warn(`[WS] ⚠ SLOW MCP CALL: ${event.item.name} took ${latencyMs}ms`);
+          }
           if (event.item.error) {
             console.error('[WS] MCP ERROR:', JSON.stringify(event.item.error));
           }
@@ -248,6 +280,28 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
                 console.log(`[WS] Fetching weather for: ${args.city || 'London (default)'}`);
                 const weather = await getWeather(args.city);
                 result = JSON.stringify(weather);
+              } else if (fnCall.name === 'get_calendar_events') {
+                if (!graphToken) {
+                  result = JSON.stringify({ error: 'Graph API token not available — calendar read requires authentication' });
+                } else {
+                  console.log(`[WS] Fetching calendar events: ${args.start_date || 'now'} to ${args.end_date || '+7d'}`);
+                  const calStart = performance.now();
+                  const events = await getCalendarEvents(graphToken, args.start_date, args.end_date, args.max_results);
+                  const calMs = Math.round(performance.now() - calStart);
+                  console.log(`[WS] Calendar: ${events.count} events in ${calMs}ms`);
+                  result = JSON.stringify(events);
+                }
+              } else if (fnCall.name === 'get_recent_emails') {
+                if (!graphToken) {
+                  result = JSON.stringify({ error: 'Graph API token not available — email read requires authentication' });
+                } else {
+                  console.log(`[WS] Fetching emails: count=${args.count || 10} filter=${args.filter || 'none'} search=${args.search || 'none'}`);
+                  const emailStart = performance.now();
+                  const emails = await getRecentEmails(graphToken, args.count, args.filter, args.search);
+                  const emailMs = Math.round(performance.now() - emailStart);
+                  console.log(`[WS] Email: ${emails.count} emails in ${emailMs}ms`);
+                  result = JSON.stringify(emails);
+                }
               } else {
                 result = JSON.stringify({ error: 'Unknown function' });
               }
@@ -285,7 +339,7 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
     console.log('[WS] Greeting sent');
 
     // Start meeting countdown monitoring
-    startMeetingCountdown(voiceLiveWs);
+    startMeetingCountdown(voiceLiveWs, graphToken);
   }
 
   // Fallback: if avatar handshake takes too long, send greeting anyway

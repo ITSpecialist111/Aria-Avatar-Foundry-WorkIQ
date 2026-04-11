@@ -134,6 +134,7 @@ function MainApp() {
             voiceLive.sendTextMessage(scenario.promptHint);
             setShowControls(false);
           }}
+          onRunSmokeTest={voiceLive.runSmokeTest}
         />
       )}
     </div>

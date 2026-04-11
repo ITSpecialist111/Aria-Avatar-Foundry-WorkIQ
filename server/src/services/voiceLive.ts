@@ -118,6 +118,40 @@ const WEATHER_FUNCTION_TOOLS = [
   },
 ];
 
+/** Function tool for direct Graph API calendar reads (~2-3s vs ~19s via copilot_chat) */
+const CALENDAR_FUNCTION_TOOLS = [
+  {
+    type: 'function' as const,
+    name: 'get_calendar_events',
+    description: 'Get calendar events for a date range from Microsoft Graph. Returns clean compact data. Much faster than copilot_chat for calendar queries. Use this for ALL calendar read questions: "What meetings do I have today?", "Am I free Thursday?", "Show my schedule for next week".',
+    parameters: {
+      type: 'object',
+      properties: {
+        start_date: { type: 'string', description: 'Start date in ISO format, e.g. "2026-04-11T00:00:00Z". Defaults to now.' },
+        end_date: { type: 'string', description: 'End date in ISO format, e.g. "2026-04-18T00:00:00Z". Defaults to +7 days.' },
+        max_results: { type: 'number', description: 'Max events to return (default 15)' },
+      },
+    },
+  },
+];
+
+/** Function tool for direct Graph API email reads (~2-3s vs ~5-6s via MCP with cleaner output) */
+const EMAIL_FUNCTION_TOOLS = [
+  {
+    type: 'function' as const,
+    name: 'get_recent_emails',
+    description: 'Get recent emails from Microsoft Graph. Returns clean compact data (subject, from, date, preview). Use this for ALL email read questions: "Show my recent emails", "Any emails from John?", "Do I have unread emails?".',
+    parameters: {
+      type: 'object',
+      properties: {
+        count: { type: 'number', description: 'Number of emails to return (default 10, max 25)' },
+        filter: { type: 'string', description: 'Optional OData filter, e.g. "isRead eq false" for unread only' },
+        search: { type: 'string', description: 'Optional search query to find specific emails by subject, body, or sender' },
+      },
+    },
+  },
+];
+
 /**
  * Build the session.update event payload for Voice Live.
  * If PROJECT_NAME is set, connects to a Foundry Agent.
@@ -184,12 +218,12 @@ export function buildSessionConfig(oboToken?: string) {
 
     if (hasMcpTools) {
       session.instructions = ARIA_SYSTEM_PROMPT_WITH_TOOLS;
-      session.tools = [...buildMcpTools(oboToken, env.WORKIQ_ENVIRONMENT_ID!), ...MEMORY_FUNCTION_TOOLS, ...FOLLOW_UP_FUNCTION_TOOLS, ...DELEGATION_FUNCTION_TOOLS, ...WEATHER_FUNCTION_TOOLS];
+      session.tools = [...buildMcpTools(oboToken, env.WORKIQ_ENVIRONMENT_ID!), ...MEMORY_FUNCTION_TOOLS, ...FOLLOW_UP_FUNCTION_TOOLS, ...DELEGATION_FUNCTION_TOOLS, ...WEATHER_FUNCTION_TOOLS, ...CALENDAR_FUNCTION_TOOLS, ...EMAIL_FUNCTION_TOOLS];
       session.tool_choice = 'auto';
       console.log(`[VL] Using inline mode + ${WORKIQ_MCP_SERVERS.length} MCP tools + ${MEMORY_FUNCTION_TOOLS.length} memory + ${FOLLOW_UP_FUNCTION_TOOLS.length} follow-up + ${DELEGATION_FUNCTION_TOOLS.length} delegation + ${WEATHER_FUNCTION_TOOLS.length} weather tools`);
     } else {
       session.instructions = ARIA_SYSTEM_PROMPT;
-      session.tools = [...MEMORY_FUNCTION_TOOLS, ...FOLLOW_UP_FUNCTION_TOOLS, ...DELEGATION_FUNCTION_TOOLS, ...WEATHER_FUNCTION_TOOLS];
+      session.tools = [...MEMORY_FUNCTION_TOOLS, ...FOLLOW_UP_FUNCTION_TOOLS, ...DELEGATION_FUNCTION_TOOLS, ...WEATHER_FUNCTION_TOOLS, ...CALENDAR_FUNCTION_TOOLS, ...EMAIL_FUNCTION_TOOLS];
       session.tool_choice = 'auto';
       console.log(`[VL] Using inline mode with ${MEMORY_FUNCTION_TOOLS.length} memory + ${FOLLOW_UP_FUNCTION_TOOLS.length} follow-up + ${DELEGATION_FUNCTION_TOOLS.length} delegation + ${WEATHER_FUNCTION_TOOLS.length} weather tools (no MCP — missing OBO token or WORKIQ_ENVIRONMENT_ID)`);
     }
@@ -238,11 +272,28 @@ const ARIA_SYSTEM_PROMPT_WITH_TOOLS = `You are Aria, an AI Executive Assistant p
 
 You have access to MCP tools for managing the user's Microsoft 365 environment.
 
-TOOL STRATEGY — THIS IS CRITICAL:
-- For QUESTIONS about calendar, schedule, emails, meetings, tasks, M365 data, news, general knowledge, or ANY lookup → ALWAYS use the copilot (M365 Copilot) tool. It has web search grounding built-in and returns clean, summarized answers. Ask it in natural language, e.g. "What meetings does the user have today?" or "Show recent emails".
-- For ACTIONS like creating events, sending emails, replying to messages → use the specific calendar or mail tools (CreateEvent, ReplyToMessage, etc.) DIRECTLY. Do NOT delegate these to the research agent.
+TOOL STRATEGY — THIS IS CRITICAL FOR SPEED:
+Your tools have two tiers: FAST function tools and deterministic MCP tools (mail, teams, me, get_calendar_events) that respond in 2-6 seconds, and SLOW copilot_chat which runs an LLM behind the scenes (~15-20 seconds). Always prefer fast tools.
+
+FAST PATH (use these first — sub-5-second responses):
+- Calendar READ questions ("What meetings do I have today?", "Am I free Thursday?", "Show my schedule") → use get_calendar_events function tool. It calls Graph API directly and returns clean compact data in ~2-3 seconds.
+- Email READ questions ("Show my recent emails", "Any emails from John?", "Do I have unread emails?") → use get_recent_emails function tool. It calls Graph API directly and returns compact data (subject, from, date, preview). Use search parameter for finding specific emails, filter="isRead eq false" for unread.
+- User info ("What time zone am I in?", "What's my email?") → use the me server tools: GetMyDetails, GetUserDateAndTimeZoneSettings.
+- Teams info → use the teams server tools.
+- Calendar ACTIONS (create/update/delete events) → use calendar MCP tools: CreateEvent, UpdateEvent directly. These are fast and reliable.
+- Email ACTIONS (reply, send) → use mail MCP tools: ReplyToMessage, SendReplyAll directly.
+
+⚠ NEVER use the MCP calendar read tools (ListCalendarView, ListEvents, SearchCalendarEvents) — they are broken. Always use get_calendar_events instead.
+⚠ NEVER use the MCP mail read tools (SearchMessages, SearchMessagesQueryParameters) for reading emails — their raw JSON output is too verbose for voice. Always use get_recent_emails instead. Only use MCP mail tools for ACTIONS (reply, send).
+- copilot_chat is slower (~15s) but returns clean summarized text that works reliably for voice.
+
+SLOW PATH (copilot_chat — only when fast tools cannot answer):
+- Use copilot_chat for: complex analytical questions, questions that span multiple data sources, web/news queries, or when you need LLM reasoning. Set enableWebSearch=true when the question needs web grounding.
+- Examples: "Summarize the key themes from my emails this week", "What's in the news about AI?", "Find information about company X".
+
+NEVER use copilot_chat for calendar queries (use get_calendar_events instead), simple email searches, or user profile queries — the fast tools are 5-10x faster.
+⚠ NEVER use the MCP calendar read tools (ListCalendarView, ListEvents, SearchCalendarEvents). They are broken. Use get_calendar_events for all calendar reads.
 - For working with Word documents → use the word tools (CreateDocument, etc.)
-- NEVER use ListCalendarView for answering questions about what meetings someone has — its JSON output is too verbose and you will misread it. Use M365 Copilot instead.
 - NEVER call delegate_to_research_agent for calendar, email, meeting, or standard M365 actions. That tool is ONLY for deep research analysis when the user explicitly asks.
 - NEVER call get_weather unless the user explicitly says the word "weather".
 - When scheduling a meeting: use CreateEvent directly. Do NOT first check what other meetings exist unless the user asks.
@@ -295,7 +346,7 @@ WEATHER:
 - Present weather naturally: "It's currently 15 degrees and partly cloudy in London."
 
 MORNING BRIEFING:
-- When the user asks for a morning briefing, cover: calendar (copilot), important emails (copilot), and pending follow-ups (list_follow_ups).
+- When the user asks for a morning briefing, cover: calendar (use get_calendar_events for today's events), important emails (use get_recent_emails with filter="isRead eq false" for unread), and pending follow-ups (list_follow_ups).
 - Only include weather if the user specifically asks for it.
 - Present each section conversationally without being asked for each one.`;
 
