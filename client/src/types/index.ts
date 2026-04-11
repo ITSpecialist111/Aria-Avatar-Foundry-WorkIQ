@@ -8,6 +8,7 @@ export type SessionState =
   | 'connecting'
   | 'connected'
   | 'active'
+  | 'reconnecting'
   | 'error';
 
 /** Avatar character options */

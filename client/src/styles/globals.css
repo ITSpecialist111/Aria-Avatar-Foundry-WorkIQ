@@ -11,7 +11,7 @@
 
 @layer components {
   .avatar-container {
-    @apply relative w-full h-full overflow-hidden;
+    @apply relative w-full h-full overflow-hidden rounded-2xl;
     background: #000;
   }
 
@@ -45,7 +45,8 @@
   }
 
   .transcript-bubble.assistant {
-    @apply bg-slate-800 text-slate-100 mr-auto rounded-bl-md;
+    @apply bg-white/5 text-slate-100 mr-auto rounded-bl-md
+           backdrop-blur-md border border-white/10;
   }
 
   .action-card {
@@ -55,6 +56,25 @@
 
   .glass-panel {
     @apply bg-slate-900/80 backdrop-blur-xl border border-slate-700/50 rounded-2xl;
+  }
+
+  /* Glass surface utility for premium frosted look */
+  .glass-surface {
+    @apply bg-white/[0.03] backdrop-blur-xl border border-white/[0.08];
+  }
+
+  /* Animated gradient border (use on pseudo-elements) */
+  .glass-border-glow {
+    background: linear-gradient(
+      90deg,
+      rgba(59, 130, 246, 0) 0%,
+      rgba(59, 130, 246, 0.5) 25%,
+      rgba(147, 51, 234, 0.5) 50%,
+      rgba(59, 130, 246, 0.5) 75%,
+      rgba(59, 130, 246, 0) 100%
+    );
+    background-size: 200% 100%;
+    animation: gradient-sweep 3s linear infinite;
   }
 
   .status-dot {
@@ -69,6 +89,10 @@
     @apply bg-amber-400 animate-pulse;
   }
 
+  .status-dot.reconnecting {
+    @apply bg-amber-400 animate-pulse;
+  }
+
   .status-dot.disconnected {
     @apply bg-slate-500;
   }
@@ -76,6 +100,172 @@
   .status-dot.error {
     @apply bg-red-500;
   }
+
+  /* ── Avatar Presence Aura ── */
+  .avatar-aura {
+    @apply absolute inset-0 rounded-2xl pointer-events-none;
+    z-index: 1;
+  }
+
+  .avatar-aura.aura-idle {
+    box-shadow: inset 0 0 30px rgba(59, 130, 246, 0.1),
+                0 0 40px rgba(59, 130, 246, 0.15),
+                0 0 80px rgba(147, 51, 234, 0.08);
+    animation: aura-breathe 4s ease-in-out infinite;
+  }
+
+  .avatar-aura.aura-speaking {
+    box-shadow: inset 0 0 30px rgba(59, 130, 246, 0.2),
+                0 0 50px rgba(59, 130, 246, 0.3),
+                0 0 100px rgba(147, 51, 234, 0.15);
+    animation: aura-speak 1.5s ease-in-out infinite;
+  }
+
+  .avatar-aura.aura-listening {
+    box-shadow: inset 0 0 30px rgba(16, 185, 129, 0.15),
+                0 0 50px rgba(16, 185, 129, 0.25),
+                0 0 100px rgba(52, 211, 153, 0.1);
+    animation: aura-listen 2s ease-in-out infinite;
+  }
+
+  .avatar-aura.aura-thinking {
+    background: conic-gradient(
+      from var(--aura-angle, 0deg),
+      rgba(245, 158, 11, 0.3),
+      rgba(245, 158, 11, 0),
+      rgba(245, 158, 11, 0),
+      rgba(245, 158, 11, 0.3)
+    );
+    animation: aura-think 2s linear infinite;
+  }
+
+  /* ── Cinematic Avatar Reveal ── */
+  .avatar-reveal {
+    animation: avatar-reveal 0.6s ease-out forwards;
+  }
+
+  .avatar-idle-logo {
+    transition: opacity 0.4s ease-out, transform 0.4s ease-out, filter 0.4s ease-out;
+  }
+
+  .avatar-idle-logo.connecting {
+    animation: logo-pulse-fast 0.8s ease-in-out infinite;
+  }
+
+  .avatar-idle-logo.exit {
+    opacity: 0;
+    transform: scale(1.2);
+    filter: blur(8px);
+  }
+
+  /* ── Tool Call Neural Processing Overlay ── */
+  .tool-overlay {
+    @apply absolute bottom-0 left-0 right-0 z-20;
+    transform: translateY(100%);
+    transition: transform 0.3s ease-out;
+  }
+
+  .tool-overlay.active {
+    transform: translateY(0);
+  }
+
+  .tool-overlay-bar {
+    @apply relative overflow-hidden px-4 py-2.5 flex items-center gap-3;
+    background: linear-gradient(
+      135deg,
+      rgba(15, 23, 42, 0.85) 0%,
+      rgba(30, 41, 59, 0.9) 100%
+    );
+    backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .tool-shimmer {
+    @apply absolute inset-0 pointer-events-none;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(59, 130, 246, 0.08) 50%,
+      transparent 100%
+    );
+    animation: shimmer 1.5s linear infinite;
+  }
+
+  /* ── Data Overlay Cards (Jarvis-style) ── */
+  .data-overlay {
+    @apply absolute left-4 top-4 z-10 max-w-[280px];
+    animation: overlay-slide-in 0.5s ease-out forwards;
+  }
+
+  .data-overlay.fading {
+    animation: overlay-fade-out 0.5s ease-in forwards;
+  }
+
+  .data-overlay-card {
+    @apply rounded-xl p-3 border;
+    background: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(16px);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  /* ── Quick Launch Bar ── */
+  .quick-launch-bar {
+    @apply absolute bottom-20 left-1/2 -translate-x-1/2 z-10
+           flex items-center gap-2 px-2 py-1.5 rounded-full;
+    background: rgba(15, 23, 42, 0.7);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    animation: bubble-enter 0.3s ease-out forwards;
+  }
+
+  .quick-launch-pill {
+    @apply px-3 py-1.5 text-xs rounded-full cursor-pointer transition-all
+           text-slate-300 hover:text-white;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .quick-launch-pill:hover {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: rgba(59, 130, 246, 0.4);
+  }
+
+  /* ── Prompt Chips ── */
+  .prompt-chip {
+    @apply px-3 py-2 text-xs rounded-xl cursor-pointer transition-all
+           text-slate-300 hover:text-white text-left;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .prompt-chip:hover {
+    background: rgba(59, 130, 246, 0.12);
+    border-color: rgba(59, 130, 246, 0.3);
+    transform: translateY(-1px);
+  }
+
+  /* ── Tab Indicator ── */
+  .tab-indicator {
+    @apply absolute bottom-0 left-0 h-0.5 bg-brand-500 transition-all duration-300 ease-out rounded-full;
+  }
+}
+
+/* CSS custom property for conic gradient rotation */
+@property --aura-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* Avatar reveal keyframe */
+@keyframes avatar-reveal {
+  0% { opacity: 0; filter: blur(12px); transform: scale(1.03); }
+  100% { opacity: 1; filter: blur(0px); transform: scale(1); }
+}
+
+@keyframes logo-pulse-fast {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.08); opacity: 1; }
 }
 
 /* WebRTC video element styling */

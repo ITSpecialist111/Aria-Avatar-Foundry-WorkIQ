@@ -188,17 +188,21 @@ Avatar-Foundry/
 │   │   ├── auth/              # MSAL config
 │   │   ├── components/
 │   │   │   ├── AccessibleView.tsx    # Full-screen accessible mode (no avatar)
-│   │   │   ├── AvatarView.tsx        # WebRTC HD avatar display
-│   │   │   ├── ConversationPanel.tsx  # Chat transcript with ARIA live regions
-│   │   │   ├── DashboardCard.tsx      # Reusable card (calendar/email/weather/task/action)
+│   │   │   ├── AvatarView.tsx        # WebRTC HD avatar + aura ring + cinematic reveal
+│   │   │   ├── ConversationPanel.tsx  # Tabbed Chat/Activity panel + text input + prompt chips
+│   │   │   ├── DashboardCard.tsx      # Rich visual cards (timeline, sender circles, checkmarks)
 │   │   │   ├── DashboardPanel.tsx     # Side panel with Quick Access + Activity feed
+│   │   │   ├── DataOverlay.tsx        # Jarvis-style data cards overlaying avatar
 │   │   │   ├── DemoControls.tsx       # 10 demo scenario triggers
-│   │   │   ├── StatusBar.tsx          # Header with status, accessibility toggle, settings
-│   │   │   └── TickerBar.tsx          # Live ticker: weather, meetings, emails, Kanban link
+│   │   │   ├── ParticleField.tsx      # Canvas particle drift behind avatar
+│   │   │   ├── QuickLaunchBar.tsx     # Floating scenario pills on idle
+│   │   │   ├── StatusBar.tsx          # Glass morphism header with animated gradient border
+│   │   │   ├── TickerBar.tsx          # Live ticker: 1s clock, meeting countdown, radio-wave
+│   │   │   └── ToolCallOverlay.tsx    # Shimmer glass bar during tool calls
 │   │   ├── hooks/
-│   │   │   ├── useVoiceLive.ts        # WebRTC + WebSocket + mic + MCP card parsing
+│   │   │   ├── useVoiceLive.ts        # WebRTC + WebSocket + mic + MCP + auto-reconnect
 │   │   │   └── useAccessibility.ts    # Font size, contrast, earcons, mode, preferences
-│   │   ├── styles/globals.css         # Tailwind + high contrast + reduced motion + focus
+│   │   ├── styles/globals.css         # Glass morphism, auras, animations, high contrast
 │   │   └── types/                     # Shared TypeScript types + demo scenarios
 │   └── vite.config.ts
 ├── server/                    # Express backend
@@ -239,6 +243,27 @@ Avatar-Foundry/
 - **Fully Actionable via Work IQ** — Send emails, create/update/move meetings, create Word docs, and more via delegated M365 MCP tools
 - **Three-Tier Tool Routing** — Fast custom Graph API tools (~2-3s) for calendar/email reads, MCP tools (~4-6s) for M365 write actions, copilot_chat (~15-20s) only for complex analytics
 - **Direct Graph API** — Calendar and email reads bypass slow MCP tools via direct Microsoft Graph API calls with OBO tokens, returning compact data optimized for voice responses
+
+### Cinematic UI (Zero Dependencies)
+
+All visual enhancements use only CSS animations, canvas API, and Tailwind CSS — no additional npm packages.
+
+- **Avatar Presence Aura** — State-responsive gradient halo: idle (breathing blue-purple pulse), speaking (bright pulse), listening (emerald green), thinking (amber conic rotation via `@property --aura-angle`)
+- **Cinematic Session Start** — Logo pulses faster on connecting, scales up and blurs out, video fades in with blur-to-sharp reveal — Aria *arrives*, not just connects
+- **Glass Morphism** — Every surface upgraded to frosted glass: `backdrop-blur-xl` panels, animated gradient border on StatusBar, frosted assistant bubbles
+- **Tool Call Overlay** — Shimmer glass bar slides up during tool calls with tool name, multi-step progress dots, and completion checkmark
+- **Data Overlay (Jarvis Mode)** — Calendar/email/weather cards slide in from avatar left on tool results, auto-fade after 10s — the "Iron Man HUD" moment
+- **Particle Field** — Canvas-based 35-particle drift behind avatar. Particles accelerate during tool calls (amber), glow during speech
+- **Quick-Launch Bar** — Floating scenario pill buttons after 5s idle: Morning Briefing, Schedule Meeting, Email Triage, Deep Research
+- **Conversation Tabs** — Chat + Activity tabs with animated underline indicator. Dashboard cards moved to Activity tab for cleaner transcript
+- **Text Input Bar** — Glass-morphism input at panel bottom, Enter to send, disabled when session inactive
+- **Prompt Chips** — Empty state shows branded card with 4 clickable conversation starters
+- **Rich Dashboard Cards** — Calendar mini-timelines with dots, email sender circles, self-drawing SVG checkmarks for actions, staggered entrance animations
+- **Ticker Bar Upgrade** — 1-second clock, next-meeting live countdown, animated radio-wave "Live" indicator, gradient dividers
+- **Auto-Reconnect** — Exponential backoff (1s/2s/4s, max 3 retries) on unexpected WebRTC disconnect, preserves transcript and cards
+
+### Core Features
+
 - **Dashboard Cards** — Live side-panel cards showing calendar events, emails, weather, actions, and quick-access widgets from MCP tool results
 - **Ticker Bar** — Top-of-screen ticker with weather, meeting counts, email summaries, and Kanban board link
 - **Weather Integration** — Real-time weather via Open-Meteo free API (no key required), available as voice tool and dashboard widget
@@ -276,7 +301,7 @@ Connects to a Foundry Agent for reasoning and tool calling. Voice Live handles t
 
 - **VQ Token Artifacts** — GPT-5 Realtime occasionally leaks `<|vq_...|>` tokens or "audio text" into speech. Mitigated with 3-layer defense (system prompt + server filter + client filter) but still model-level.
 - **GPT-5 Agent Support** — GPT-5 not yet available as a Foundry Agent chat model (`DeploymentModelNotSupported`). Use inline + MCP tools mode instead.
-- **WebRTC Timeout** — Avatar WebRTC disconnects after 5min idle / 30min total. Auto-reconnect not yet implemented.
+- **WebRTC Timeout** — Avatar WebRTC disconnects after 5min idle / 30min total. Auto-reconnect now implemented with exponential backoff (1s/2s/4s, max 3 retries), preserving transcript and dashboard cards across reconnections.
 - **Avatar Gestures** — 29 gestures available for Meg Casual but batch synthesis only. Not supported in real-time/Voice Live mode (natural idle animations only).
 
 ## Azure Resources

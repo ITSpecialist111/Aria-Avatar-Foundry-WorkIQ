@@ -97,29 +97,35 @@ function MainApp() {
 
       <div className="flex-1 flex overflow-hidden">
         {/* Avatar — left/center area */}
-        <div className="flex-1 relative p-4">
+        <div className="flex-1 relative p-3">
           <AvatarView
             avatarConfig={avatarConfig}
             isListening={voiceLive.isListening}
             isSpeaking={voiceLive.isSpeaking}
             isMuted={voiceLive.isMuted}
+            isToolCallActive={voiceLive.isToolCallActive}
             sessionState={voiceLive.sessionState}
+            workflowSteps={voiceLive.workflowSteps}
+            dashboardCards={voiceLive.dashboardCards}
             onToggleSession={voiceLive.toggleSession}
             onToggleMute={voiceLive.toggleMute}
+            onSendText={voiceLive.sendTextMessage}
             videoRef={voiceLive.videoRef}
             audioRef={voiceLive.audioRef}
           />
         </div>
 
         {/* Conversation panel — right side */}
-        <div className="w-[400px] shrink-0 flex flex-col border-l border-slate-800 min-h-0">
+        <div className="w-[400px] xl:w-[440px] 2xl:w-[480px] shrink-0 flex flex-col min-h-0">
           <ConversationPanel
             transcript={voiceLive.transcript}
             actions={voiceLive.actions}
             dashboardCards={voiceLive.dashboardCards}
             workflowSteps={voiceLive.workflowSteps}
+            sessionState={voiceLive.sessionState}
             onConfirmAction={voiceLive.confirmAction}
             onRejectAction={voiceLive.rejectAction}
+            onSendText={voiceLive.sendTextMessage}
           />
         </div>
       </div>

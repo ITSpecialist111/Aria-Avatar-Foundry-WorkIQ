@@ -1,14 +1,24 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Mic, MicOff, Phone, PhoneOff } from 'lucide-react';
-import type { AvatarConfig, SessionState } from '../types';
+import type { AvatarConfig, SessionState, DashboardCard } from '../types';
+import type { WorkflowStep } from '../hooks/useVoiceLive';
+import { ToolCallOverlay } from './ToolCallOverlay';
+import { DataOverlay } from './DataOverlay';
+import { ParticleField } from './ParticleField';
+import { QuickLaunchBar } from './QuickLaunchBar';
 
 interface AvatarViewProps {
   avatarConfig: AvatarConfig;
   isListening: boolean;
   isSpeaking: boolean;
   isMuted: boolean;
+  isToolCallActive: boolean;
   sessionState: SessionState;
+  workflowSteps: WorkflowStep[];
+  dashboardCards: DashboardCard[];
   onToggleSession: () => void;
   onToggleMute: () => void;
+  onSendText: (text: string) => void;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   audioRef: React.RefObject<HTMLAudioElement | null>;
 }
@@ -18,20 +28,87 @@ export function AvatarView({
   isListening,
   isSpeaking,
   isMuted,
+  isToolCallActive,
   sessionState,
+  workflowSteps,
+  dashboardCards,
   onToggleSession,
   onToggleMute,
+  onSendText,
   videoRef,
   audioRef,
 }: AvatarViewProps) {
   const isActive = sessionState === 'connected' || sessionState === 'active';
+  const [showVideo, setShowVideo] = useState(false);
+  const [logoExiting, setLogoExiting] = useState(false);
+  const [idleSeconds, setIdleSeconds] = useState(0);
+  const lastActivityRef = useRef(Date.now());
+
+  // Cinematic reveal: when session becomes active, animate logo out → video in
+  useEffect(() => {
+    if (isActive && !showVideo) {
+      setLogoExiting(true);
+      const timer = setTimeout(() => {
+        setShowVideo(true);
+        setLogoExiting(false);
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+    if (!isActive) {
+      setShowVideo(false);
+      setLogoExiting(false);
+    }
+  }, [isActive, showVideo]);
+
+  // Track idle time for quick-launch visibility
+  useEffect(() => {
+    if (isSpeaking || isListening || isToolCallActive) {
+      lastActivityRef.current = Date.now();
+      setIdleSeconds(0);
+    }
+  }, [isSpeaking, isListening, isToolCallActive]);
+
+  useEffect(() => {
+    if (!isActive) { setIdleSeconds(0); return; }
+    const interval = setInterval(() => {
+      setIdleSeconds(Math.floor((Date.now() - lastActivityRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isActive]);
+
+  const handleQuickLaunch = useCallback((prompt: string) => {
+    onSendText(prompt);
+    lastActivityRef.current = Date.now();
+    setIdleSeconds(0);
+  }, [onSendText]);
+
+  // Determine aura state
+  const auraClass = isToolCallActive
+    ? 'aura-thinking'
+    : isSpeaking
+      ? 'aura-speaking'
+      : isListening
+        ? 'aura-listening'
+        : 'aura-idle';
 
   return (
-    <div className="avatar-container h-full flex flex-col items-center justify-center"
-         style={{ backgroundColor: '#000' }}>
-      {/* Avatar video */}
+    <div className="avatar-container h-full flex flex-col items-center justify-center">
+      {/* Avatar video area */}
       <div className="relative flex-1 w-full flex items-center justify-center min-h-0">
-        {isActive ? (
+        {/* Particle field behind everything */}
+        {isActive && (
+          <ParticleField
+            isSpeaking={isSpeaking}
+            isToolCallActive={isToolCallActive}
+          />
+        )}
+
+        {/* Aura ring */}
+        {isActive && showVideo && (
+          <div className={`avatar-aura ${auraClass}`} />
+        )}
+
+        {isActive && showVideo ? (
           <>
             <video
               id="avatar-video"
@@ -39,13 +116,14 @@ export function AvatarView({
               autoPlay
               playsInline
               muted
-              className="avatar-video w-full h-full object-cover"
+              className="avatar-video w-full h-full object-cover avatar-reveal"
+              style={{ position: 'relative', zIndex: 2 }}
             />
             <audio ref={audioRef} autoPlay />
           </>
         ) : (
-          <div className="text-center space-y-4">
-            <div className="w-32 h-32 mx-auto rounded-full bg-gradient-to-br from-brand-500 to-purple-600 flex items-center justify-center">
+          <div className={`text-center space-y-4 avatar-idle-logo ${sessionState === 'connecting' ? 'connecting' : ''} ${logoExiting ? 'exit' : ''}`}>
+            <div className="w-32 h-32 mx-auto rounded-full bg-gradient-to-br from-brand-500 to-purple-600 flex items-center justify-center shadow-lg shadow-brand-500/20">
               <span className="text-5xl font-bold">A</span>
             </div>
             <div>
@@ -55,20 +133,45 @@ export function AvatarView({
             {sessionState === 'connecting' && (
               <p className="text-brand-400 animate-pulse">Connecting...</p>
             )}
+            {sessionState === 'reconnecting' && (
+              <div className="space-y-2">
+                <p className="text-amber-400 animate-pulse">Reconnecting...</p>
+                <p className="text-slate-500 text-xs">Session interrupted — retrying automatically</p>
+              </div>
+            )}
           </div>
         )}
 
+        {/* Data overlay cards — float over avatar */}
+        {isActive && showVideo && (
+          <DataOverlay dashboardCards={dashboardCards} />
+        )}
+
         {/* Speaking indicator */}
-        {isSpeaking && isActive && (
-          <div className="absolute top-4 right-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-500/20 border border-brand-500/30">
+        {isSpeaking && isActive && showVideo && (
+          <div className="absolute top-4 right-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-500/20 border border-brand-500/30 backdrop-blur-md"
+               style={{ zIndex: 15 }}>
             <div className="w-2 h-2 bg-brand-400 rounded-full animate-pulse" />
             <span className="text-xs text-brand-300">Aria is speaking</span>
           </div>
         )}
+
+        {/* Tool Call Overlay — slides up from bottom */}
+        {isActive && showVideo && (
+          <ToolCallOverlay
+            workflowSteps={workflowSteps}
+            isToolCallActive={isToolCallActive}
+          />
+        )}
+
+        {/* Quick Launch Bar — visible after 5s idle */}
+        {isActive && showVideo && idleSeconds >= 5 && !isSpeaking && !isToolCallActive && (
+          <QuickLaunchBar onSelect={handleQuickLaunch} />
+        )}
       </div>
 
       {/* Controls bar */}
-      <div className="flex items-center justify-center gap-4 p-6 shrink-0">
+      <div className="flex items-center justify-center gap-4 p-6 shrink-0" style={{ zIndex: 20 }}>
         {/* Mute button */}
         {isActive && (
           <button
@@ -102,7 +205,7 @@ export function AvatarView({
         {/* Start/End session button */}
         <button
           onClick={onToggleSession}
-          disabled={sessionState === 'connecting'}
+          disabled={sessionState === 'connecting' || sessionState === 'reconnecting'}
           className={`flex items-center gap-2 px-6 py-3 rounded-full font-medium transition-all
             ${isActive
               ? 'bg-red-600 hover:bg-red-700 text-white'
@@ -118,7 +221,7 @@ export function AvatarView({
           ) : (
             <>
               <Phone className="w-5 h-5" />
-              {sessionState === 'connecting' ? 'Connecting...' : 'Start Conversation'}
+              {sessionState === 'connecting' ? 'Connecting...' : sessionState === 'reconnecting' ? 'Reconnecting...' : 'Start Conversation'}
             </>
           )}
         </button>

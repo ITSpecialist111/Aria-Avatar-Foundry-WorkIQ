@@ -1,6 +1,6 @@
-import { useRef, useEffect } from 'react';
-import { Mail, Calendar, Search, CheckSquare, MessageSquare, Globe, User, FileText, Check, X } from 'lucide-react';
-import type { TranscriptEntry, AgentAction, DashboardCard } from '../types';
+import { useRef, useEffect, useState, useCallback } from 'react';
+import { Mail, Calendar, Search, CheckSquare, MessageSquare, Globe, User, FileText, Check, X, Send, MessageCircle, Activity } from 'lucide-react';
+import type { TranscriptEntry, AgentAction, DashboardCard, SessionState } from '../types';
 import type { WorkflowStep } from '../hooks/useVoiceLive';
 import { DashboardPanel } from './DashboardPanel';
 
@@ -9,8 +9,10 @@ interface ConversationPanelProps {
   actions: AgentAction[];
   dashboardCards: DashboardCard[];
   workflowSteps: WorkflowStep[];
+  sessionState: SessionState;
   onConfirmAction: (actionId: string) => void;
   onRejectAction: (actionId: string) => void;
+  onSendText: (text: string) => void;
 }
 
 const ACTION_ICONS: Record<string, React.ElementType> = {
@@ -23,6 +25,13 @@ const ACTION_ICONS: Record<string, React.ElementType> = {
   user_lookup: User,
   file: FileText,
 };
+
+const PROMPT_CHIPS = [
+  "What's on my calendar today?",
+  "Give me a morning briefing",
+  "Show my recent emails",
+  "Schedule a meeting",
+];
 
 function ActionCard({ action, onConfirm, onReject }: {
   action: AgentAction;
@@ -74,32 +83,78 @@ export function ConversationPanel({
   actions,
   dashboardCards,
   workflowSteps,
+  sessionState,
   onConfirmAction,
   onRejectAction,
+  onSendText,
 }: ConversationPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<'chat' | 'activity'>('chat');
+  const [inputText, setInputText] = useState('');
+
+  const isActive = sessionState === 'connected' || sessionState === 'active';
 
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current && activeTab === 'chat') {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [transcript, actions]);
+  }, [transcript, actions, activeTab]);
+
+  const handleSend = useCallback(() => {
+    const text = inputText.trim();
+    if (!text || !isActive) return;
+    onSendText(text);
+    setInputText('');
+  }, [inputText, isActive, onSendText]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  }, [handleSend]);
 
   return (
-    <div className="flex flex-col h-full min-h-0" role="complementary" aria-label="Conversation panel">
-      {/* Header */}
-      <div className="p-4 border-b border-slate-800">
-        <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
-          Conversation
-        </h3>
+    <div className="flex flex-col h-full min-h-0 glass-surface rounded-none border-0 border-l border-white/[0.06]"
+         role="complementary" aria-label="Conversation panel">
+      {/* Tabs */}
+      <div className="relative flex border-b border-white/[0.06] shrink-0">
+        <button
+          onClick={() => setActiveTab('chat')}
+          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors ${
+            activeTab === 'chat' ? 'text-white' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <MessageCircle className="w-3.5 h-3.5" />
+          Chat
+        </button>
+        <button
+          onClick={() => setActiveTab('activity')}
+          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-xs font-semibold uppercase tracking-wider transition-colors ${
+            activeTab === 'activity' ? 'text-white' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <Activity className="w-3.5 h-3.5" />
+          Activity
+          {dashboardCards.length > 0 && (
+            <span className="px-1.5 py-0.5 text-[10px] font-medium bg-brand-600/30 text-brand-300 rounded-full">
+              {dashboardCards.length}
+            </span>
+          )}
+        </button>
+        {/* Animated tab indicator */}
+        <div
+          className="tab-indicator"
+          style={{
+            width: '50%',
+            transform: activeTab === 'chat' ? 'translateX(0)' : 'translateX(100%)',
+          }}
+        />
       </div>
 
-      {/* Dashboard activity cards */}
-      <DashboardPanel cards={dashboardCards} />
-
       {/* Active workflow progress indicator */}
-      {workflowSteps.length > 0 && (
-        <div className="px-4 py-2 bg-orange-500/10 border-b border-orange-500/20">
+      {workflowSteps.length > 0 && activeTab === 'chat' && (
+        <div className="px-4 py-2 bg-orange-500/10 border-b border-orange-500/20 shrink-0">
           <div className="flex items-center gap-2 text-xs text-orange-300">
             <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse" />
             <span>Workflow: {workflowSteps.filter(s => s.status === 'completed').length}/{workflowSteps.length} steps</span>
@@ -117,46 +172,109 @@ export function ConversationPanel({
         </div>
       )}
 
-      {/* Scrollable content */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3" role="log" aria-label="Conversation messages" aria-live="polite">
-        {transcript.length === 0 && actions.length === 0 && (
-          <div className="text-center text-slate-500 mt-12">
-            <p className="text-sm">Start a conversation with Aria</p>
-            <p className="text-xs mt-1">Try: "What does my day look like?"</p>
-          </div>
-        )}
-
-        {/* Interleave transcript and actions by timestamp */}
-        {[...transcript.map(t => ({ ...t, _kind: 'transcript' as const })),
-          ...actions.map(a => ({ ...a, _kind: 'action' as const }))]
-          .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
-          .map((item) => {
-            if (item._kind === 'transcript') {
-              const entry = item as TranscriptEntry & { _kind: 'transcript' };
-              if (entry.role === 'system') return null;
-              return (
-                <div key={entry.id} className="flex">
-                  <div className={`transcript-bubble ${entry.role}`}>
-                    {entry.content}
-                    {entry.isInterim && (
-                      <span className="text-xs opacity-50 ml-2">...</span>
-                    )}
+      {/* Tab content */}
+      {activeTab === 'chat' ? (
+        <>
+          {/* Scrollable chat */}
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3" role="log" aria-label="Conversation messages" aria-live="polite">
+            {transcript.length === 0 && actions.length === 0 ? (
+              /* Empty state with prompt chips */
+              <div className="flex flex-col items-center justify-center h-full space-y-6">
+                <div className="text-center space-y-2">
+                  <div className="w-12 h-12 mx-auto rounded-full bg-gradient-to-br from-brand-500/20 to-purple-500/20 border border-white/10 flex items-center justify-center">
+                    <MessageCircle className="w-5 h-5 text-brand-400" />
                   </div>
+                  <p className="text-sm text-slate-400">Start a conversation with Aria</p>
                 </div>
-              );
-            } else {
-              const action = item as AgentAction & { _kind: 'action' };
-              return (
-                <ActionCard
-                  key={action.id}
-                  action={action}
-                  onConfirm={() => onConfirmAction(action.id)}
-                  onReject={() => onRejectAction(action.id)}
-                />
-              );
-            }
-          })}
-      </div>
+                <div className="grid grid-cols-1 gap-2 w-full max-w-[260px]">
+                  {PROMPT_CHIPS.map((chip) => (
+                    <button
+                      key={chip}
+                      onClick={() => isActive && onSendText(chip)}
+                      disabled={!isActive}
+                      className="prompt-chip disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              /* Interleave transcript and actions by timestamp */
+              [...transcript.map(t => ({ ...t, _kind: 'transcript' as const })),
+                ...actions.map(a => ({ ...a, _kind: 'action' as const }))]
+                .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+                .map((item) => {
+                  if (item._kind === 'transcript') {
+                    const entry = item as TranscriptEntry & { _kind: 'transcript' };
+                    if (entry.role === 'system') return null;
+                    return (
+                      <div key={entry.id} className="flex animate-bubble-enter">
+                        <div className={`transcript-bubble ${entry.role}`}>
+                          {entry.content}
+                          {entry.isInterim && (
+                            <span className="text-xs opacity-50 ml-2">...</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  } else {
+                    const action = item as AgentAction & { _kind: 'action' };
+                    return (
+                      <ActionCard
+                        key={action.id}
+                        action={action}
+                        onConfirm={() => onConfirmAction(action.id)}
+                        onReject={() => onRejectAction(action.id)}
+                      />
+                    );
+                  }
+                })
+            )}
+          </div>
+
+          {/* Text input bar */}
+          <div className="p-3 border-t border-white/[0.06] shrink-0">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={!isActive}
+                placeholder={isActive ? 'Type a message...' : 'Start a session to chat'}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm bg-white/[0.04] border border-white/[0.08]
+                           text-white placeholder-slate-500 outline-none
+                           focus:border-brand-500/50 focus:bg-white/[0.06]
+                           disabled:opacity-40 disabled:cursor-not-allowed
+                           transition-all"
+              />
+              <button
+                onClick={handleSend}
+                disabled={!isActive || !inputText.trim()}
+                className="p-2.5 rounded-xl bg-brand-600 hover:bg-brand-700
+                           disabled:opacity-30 disabled:cursor-not-allowed
+                           transition-colors shrink-0"
+                title="Send message"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </>
+      ) : (
+        /* Activity tab — dashboard cards */
+        <div className="flex-1 overflow-y-auto">
+          <DashboardPanel cards={dashboardCards} />
+          {dashboardCards.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full text-center p-8">
+              <Activity className="w-8 h-8 text-slate-600 mb-3" />
+              <p className="text-sm text-slate-500">No activity yet</p>
+              <p className="text-xs text-slate-600 mt-1">Tool results and actions will appear here</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

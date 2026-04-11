@@ -38,6 +38,7 @@ const STATUS_LABELS: Record<SessionState, string> = {
   connecting: 'Connecting to Aria...',
   connected: 'Connected — ready to listen',
   active: 'Active conversation',
+  reconnecting: 'Reconnecting...',
   error: 'Connection error',
 };
 

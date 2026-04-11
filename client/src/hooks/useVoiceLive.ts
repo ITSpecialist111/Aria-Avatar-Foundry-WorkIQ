@@ -20,6 +20,7 @@ interface UseVoiceLiveReturn {
   isListening: boolean;
   isSpeaking: boolean;
   isMuted: boolean;
+  isToolCallActive: boolean;
   transcript: TranscriptEntry[];
   actions: AgentAction[];
   dashboardCards: DashboardCard[];
@@ -55,10 +56,17 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
   const isMutedRef = useRef(false);
   // Track pending MCP tool responses to auto-retry on turn_detected cancellation
   const mcpCallPendingRef = useRef(false);
+  const [isToolCallActive, setIsToolCallActive] = useState(false);
   // Track MCP call start times for client-side latency measurement
   const mcpCallTimersRef = useRef<Map<string, { name: string; server: string; startTime: number }>>(new Map());
   const autoRetryCountRef = useRef(0);
   const MAX_AUTO_RETRIES = 3;
+  // WebRTC auto-reconnect state
+  const reconnectCountRef = useRef(0);
+  const MAX_RECONNECT_RETRIES = 3;
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const intentionalDisconnectRef = useRef(false);
+  const toggleSessionRef = useRef<() => void>(() => {});
   // Track response boundaries for workflow step accumulation
   const currentResponseIdRef = useRef<string | null>(null);
   // Track whether current response produced non-empty audio (for duplicate MCP call detection)
@@ -452,6 +460,7 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
           // Response audio is flowing — tool result response delivered successfully
           if (mcpCallPendingRef.current) {
             mcpCallPendingRef.current = false;
+            setIsToolCallActive(false);
             autoRetryCountRef.current = 0;
           }
           // Decode base64 PCM16 audio and play it
@@ -594,6 +603,7 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
             ));
             // Flag that we're waiting for GPT-5 to present tool results
             mcpCallPendingRef.current = true;
+            setIsToolCallActive(true);
             autoRetryCountRef.current = 0;
             // GPT-5 Realtime doesn't auto-generate a follow-up response after MCP output —
             // explicitly trigger response.create so Aria presents the findings
@@ -650,6 +660,7 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
             // Only clear MCP pending if we actually got a non-empty spoken response
             if (currentResponseHasAudioRef.current || !mcpCallPendingRef.current) {
               mcpCallPendingRef.current = false;
+              setIsToolCallActive(false);
               autoRetryCountRef.current = 0;
             } else {
               console.log('[VL] Empty message response after MCP call — keeping mcpCallPending (GPT-5 may auto-retry)');
@@ -673,6 +684,7 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
               }, 500);
             } else {
               mcpCallPendingRef.current = false;
+              setIsToolCallActive(false);
               autoRetryCountRef.current = 0;
               if (errorCode === 'server_error') {
                 addTranscript({ role: 'assistant', content: 'Sorry, that hit a server error. Could you try asking again?' });
@@ -753,7 +765,13 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
 
   const toggleSession = useCallback(async () => {
     if (sessionState === 'connected' || sessionState === 'active') {
-      // End session
+      // Intentional disconnect
+      intentionalDisconnectRef.current = true;
+      reconnectCountRef.current = 0;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
       wsRef.current?.close();
       wsRef.current = null;
       stopMicCapture();
@@ -768,6 +786,8 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
     }
 
     setSessionState('connecting');
+    intentionalDisconnectRef.current = false;
+    reconnectCountRef.current = 0;
 
     try {
       // Get access token
@@ -798,7 +818,24 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
       ws.onclose = (event) => {
         console.log(`[WS] Closed: ${event.code} ${event.reason}`);
         stopMicCapture();
-        setSessionState('disconnected');
+
+        // Auto-reconnect on unexpected disconnect (not intentional, not auth error)
+        if (!intentionalDisconnectRef.current &&
+            event.code !== 1000 && // normal close
+            event.code !== 4001 && // auth error
+            reconnectCountRef.current < MAX_RECONNECT_RETRIES) {
+          reconnectCountRef.current++;
+          const delay = Math.min(1000 * Math.pow(2, reconnectCountRef.current - 1), 4000);
+          console.log(`[WS] Unexpected disconnect — reconnect attempt ${reconnectCountRef.current}/${MAX_RECONNECT_RETRIES} in ${delay}ms`);
+          setSessionState('reconnecting');
+          stopAvatar();
+          reconnectTimerRef.current = setTimeout(() => {
+            reconnectTimerRef.current = null;
+            toggleSessionRef.current();
+          }, delay);
+        } else {
+          setSessionState('disconnected');
+        }
       };
 
       ws.onerror = (error) => {
@@ -810,6 +847,9 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
       setSessionState('error');
     }
   }, [sessionState, instance, handleVoiceLiveMessage, stopMicCapture, stopAvatar]);
+
+  // Keep ref in sync so reconnect timers can call toggleSession without stale closure
+  toggleSessionRef.current = toggleSession;
 
   const sendTextMessage = useCallback((text: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -841,6 +881,11 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      intentionalDisconnectRef.current = true;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
       wsRef.current?.close();
       stopMicCapture();
       stopPlayback();
@@ -854,6 +899,7 @@ export function useVoiceLive(_options: UseVoiceLiveOptions): UseVoiceLiveReturn 
     isListening,
     isSpeaking,
     isMuted,
+    isToolCallActive,
     transcript,
     actions,
     dashboardCards,

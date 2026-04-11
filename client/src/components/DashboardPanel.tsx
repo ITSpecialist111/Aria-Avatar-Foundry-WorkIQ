@@ -57,8 +57,8 @@ export function DashboardPanel({ cards }: DashboardPanelProps) {
         }`}
       >
         <div className="px-4 pb-2 space-y-2">
-          {PINNED_WIDGETS.map(card => (
-            <DashboardCard key={card.id} card={card} />
+          {PINNED_WIDGETS.map((card, i) => (
+            <DashboardCard key={card.id} card={card} index={i} />
           ))}
         </div>
       </div>
@@ -92,8 +92,8 @@ export function DashboardPanel({ cards }: DashboardPanelProps) {
             }`}
           >
             <div className="px-4 pb-3 space-y-2">
-              {dynamicCards.map(card => (
-                <DashboardCard key={card.id} card={card} />
+              {dynamicCards.map((card, i) => (
+                <DashboardCard key={card.id} card={card} index={i} />
               ))}
             </div>
           </div>

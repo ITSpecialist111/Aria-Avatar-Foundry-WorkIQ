@@ -13,12 +13,17 @@ const STATE_LABELS: Record<SessionState, string> = {
   connecting: 'Connecting...',
   connected: 'Connected',
   active: 'Active',
+  reconnecting: 'Reconnecting...',
   error: 'Error',
 };
 
 export function StatusBar({ sessionState, agentName, onToggleControls, onToggleAccessibility }: StatusBarProps) {
   return (
-    <header className="flex items-center justify-between px-6 py-3 border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm" role="banner">
+    <header className="relative flex items-center justify-between px-6 py-3 bg-slate-900/60 backdrop-blur-xl border-b border-white/[0.06]"
+            role="banner">
+      {/* Animated gradient border-bottom */}
+      <div className="absolute bottom-0 left-0 right-0 h-px glass-border-glow" />
+
       <div className="flex items-center gap-3">
         <h1 className="text-lg font-semibold bg-gradient-to-r from-brand-400 to-purple-400 bg-clip-text text-transparent">
           {agentName}
@@ -34,7 +39,7 @@ export function StatusBar({ sessionState, agentName, onToggleControls, onToggleA
 
         <button
           onClick={onToggleAccessibility}
-          className="p-2 rounded-lg hover:bg-slate-800 transition-colors text-slate-400 hover:text-white"
+          className="p-2 rounded-lg hover:bg-white/[0.06] transition-colors text-slate-400 hover:text-white"
           title="Accessibility Mode"
           aria-label="Toggle accessible mode"
         >
@@ -43,7 +48,7 @@ export function StatusBar({ sessionState, agentName, onToggleControls, onToggleA
 
         <button
           onClick={onToggleControls}
-          className="p-2 rounded-lg hover:bg-slate-800 transition-colors text-slate-400 hover:text-white"
+          className="p-2 rounded-lg hover:bg-white/[0.06] transition-colors text-slate-400 hover:text-white"
           title="Demo Controls"
           aria-label="Open demo controls"
         >
