@@ -20,6 +20,7 @@ interface EmailResult {
   count: number;
   query: string;
   error?: string;
+  _instruction?: string;
 }
 
 /**
@@ -33,7 +34,7 @@ interface EmailResult {
  */
 export async function getRecentEmails(
   graphToken: string,
-  count: number = 10,
+  count: number = 5,
   filter?: string,
   search?: string,
 ): Promise<EmailResult> {
@@ -89,7 +90,7 @@ export async function getRecentEmails(
       subject: e.subject || 'No subject',
       from: e.from?.emailAddress?.name || e.from?.emailAddress?.address || 'Unknown',
       receivedAt: e.receivedDateTime || '',
-      preview: (e.bodyPreview || '').substring(0, 150),
+      preview: (e.bodyPreview || '').substring(0, 80),
       isRead: e.isRead ?? true,
       hasAttachments: e.hasAttachments ?? false,
       importance: e.importance || 'normal',
@@ -101,6 +102,7 @@ export async function getRecentEmails(
       emails,
       count: emails.length,
       query: queryDesc,
+      _instruction: 'Summarize these emails conversationally. Mention sender and subject for each. Do NOT read JSON aloud.',
     };
   } catch (err) {
     const durationMs = Math.round(performance.now() - timer);
