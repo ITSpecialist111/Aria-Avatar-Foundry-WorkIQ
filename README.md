@@ -324,6 +324,7 @@ Connects to a Foundry Agent for reasoning and tool calling. Voice Live handles t
 - [Voice Live API Reference](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-api-reference-2026-01-01-preview)
 - [Voice Live Agents Quickstart](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live-agents-quickstart)
 - [Standard Avatars](https://learn.microsoft.com/azure/ai-services/speech-service/text-to-speech-avatar/standard-avatars)
+- [Custom Avatar](https://learn.microsoft.com/en-gb/azure/ai-services/speech-service/text-to-speech-avatar/what-is-custom-text-to-speech-avatar) — Train a photorealistic digital twin from video of a real person
 - [Work IQ MCP Servers](https://learn.microsoft.com/microsoft-agent-365/tooling-servers-overview)
 
 ## License
