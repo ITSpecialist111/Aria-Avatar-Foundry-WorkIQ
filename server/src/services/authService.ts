@@ -1,19 +1,24 @@
 import { ConfidentialClientApplication } from '@azure/msal-node';
 import { env } from '../config/env';
 
-let msalClient: ConfidentialClientApplication | null = null;
+// Separate MSAL clients per audience to avoid OBO cache collisions.
+// MSAL caches OBO tokens by assertion hash — using the same client for
+// different audiences (Agent365 vs Graph) can return the wrong cached token.
+const msalClients = new Map<string, ConfidentialClientApplication>();
 
-function getMsalClient(): ConfidentialClientApplication {
-  if (!msalClient) {
-    msalClient = new ConfidentialClientApplication({
+function getMsalClient(cacheKey = 'default'): ConfidentialClientApplication {
+  let client = msalClients.get(cacheKey);
+  if (!client) {
+    client = new ConfidentialClientApplication({
       auth: {
         clientId: env.MSAL_CLIENT_ID,
         authority: `https://login.microsoftonline.com/${env.MSAL_TENANT_ID}`,
         clientSecret: env.MSAL_CLIENT_SECRET,
       },
     });
+    msalClients.set(cacheKey, client);
   }
-  return msalClient;
+  return client;
 }
 
 /**
@@ -24,7 +29,9 @@ export async function exchangeTokenOBO(
   userToken: string,
   scopes: string[]
 ): Promise<string> {
-  const client = getMsalClient();
+  // Use audience-specific MSAL client to avoid OBO cache collisions
+  const cacheKey = scopes.some(s => s.includes('graph.microsoft.com')) ? 'graph' : 'mcp';
+  const client = getMsalClient(cacheKey);
   console.log('[OBO] Attempting token exchange...');
   console.log('[OBO] Client ID:', env.MSAL_CLIENT_ID);
   console.log('[OBO] Scopes:', scopes.join(', '));
@@ -46,7 +53,7 @@ export async function exchangeTokenOBO(
       console.log('[OBO] Token audience:', payload.aud);
       console.log('[OBO] Token scopes:', payload.scp || payload.roles || 'none');
       console.log('[OBO] Token issuer:', payload.iss?.substring(0, 60));
-    } catch { /* non-JWT token */ }
+    } catch (_e) { /* non-JWT token */ }
     return result.accessToken;
   } catch (error: unknown) {
     const err = error as { errorCode?: string; errorMessage?: string; message?: string };

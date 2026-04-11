@@ -282,7 +282,7 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
                 result = JSON.stringify(weather);
               } else if (fnCall.name === 'get_calendar_events') {
                 if (!graphToken) {
-                  result = JSON.stringify({ error: 'Graph API token not available — calendar read requires authentication' });
+                  result = JSON.stringify({ error: 'Graph API token not available. Use the copilot MCP tool to check calendar instead.' });
                 } else {
                   console.log(`[WS] Fetching calendar events: ${args.start_date || 'now'} to ${args.end_date || '+7d'}`);
                   const calStart = performance.now();
@@ -293,7 +293,7 @@ app.ws('/ws/voice-live', async (clientWs, req) => {
                 }
               } else if (fnCall.name === 'get_recent_emails') {
                 if (!graphToken) {
-                  result = JSON.stringify({ error: 'Graph API token not available — email read requires authentication' });
+                  result = JSON.stringify({ error: 'Graph API token not available. Use the copilot MCP tool to check emails instead.' });
                 } else {
                   console.log(`[WS] Fetching emails: count=${args.count || 10} filter=${args.filter || 'none'} search=${args.search || 'none'}`);
                   const emailStart = performance.now();
